@@ -730,16 +730,29 @@ tr:last-child td {
   font-family: "Cascadia Mono", Consolas, monospace;
 }
 
-.qr-panel {
-  display: flex;
+.trio {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-top: 12px;
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
+}
+
+.trio .devices {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.qr-card .qr-image {
+  margin: 0 auto;
+}
+
+.qr-target-label {
+  display: block;
+  margin-top: 16px;
+}
+
+.qr-tip {
+  margin-top: 10px;
+  line-height: 1.6;
 }
 
 .qr-image {
@@ -759,17 +772,6 @@ tr:last-child td {
   display: block;
 }
 
-.qr-side {
-  flex: 1;
-  min-width: 220px;
-}
-
-.qr-title {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
 .qr-select {
   margin-top: 12px;
   width: 100%;
@@ -780,6 +782,11 @@ tr:last-child td {
   color: var(--text);
   font: inherit;
   font-size: 12.5px;
+}
+
+.qr-select option {
+  color: #000;
+  background: #fff;
 }
 
 .log-view {
@@ -814,6 +821,10 @@ tr:last-child td {
 
   .wide {
     grid-column: auto;
+  }
+
+  .trio {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .topbar {

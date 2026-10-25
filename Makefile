@@ -32,7 +32,7 @@ ifeq ($(MSVC),1)
   RES      := src/filedrop.res
   RC       := rc
   CXX      := cl
-  CXXFLAGS := /nologo /std:c++17 /EHsc /MT /O2 /W3 /utf-8 /D_WIN32_WINNT=0x0601 /D_CRT_SECURE_NO_WARNINGS
+  CXXFLAGS := /nologo /std:c++17 /EHsc /MT /Os /W3 /utf-8 /D_WIN32_WINNT=0x0601 /D_CRT_SECURE_NO_WARNINGS
   LDLIBS   := ws2_32.lib iphlpapi.lib shell32.lib ole32.lib oleaut32.lib
   COMPILE   = $(CXX) $(CXXFLAGS) /c $< /Fo:$@
   COMPILE_RES = $(RC) /nologo /fo $(RES) $<
@@ -44,7 +44,7 @@ else ifeq ($(OS),Windows_NT)
   RES      := src/filedrop.res
   RC       ?= windres
   CXX      ?= g++
-  CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
+  CXXFLAGS ?= -std=c++17 -Os -Wall -Wextra
   CXXFLAGS += -D_WIN32_WINNT=0x0601 -pthread -MMD -MP
   LDLIBS   := -static -static-libgcc -static-libstdc++ -lws2_32 -liphlpapi -lshell32 -lole32 -loleaut32
   COMPILE   = $(CXX) $(CXXFLAGS) -c $< -o $@
@@ -56,7 +56,7 @@ else
   DEPS     := $(OBJ:.o=.d)
   RES      :=
   CXX      ?= g++
-  CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra
+  CXXFLAGS ?= -std=c++17 -Os -Wall -Wextra
   CXXFLAGS += -pthread -MMD -MP
   LDLIBS   := -pthread
   COMPILE   = $(CXX) $(CXXFLAGS) -c $< -o $@
@@ -140,17 +140,17 @@ test: test-dns test-http
 
 test-dns:
 ifeq ($(MSVC),1)
-	$(CXX) /nologo /std:c++17 /EHsc /O2 $(MSVC_TEST_FLAGS) /Isrc /Fe:$(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp
+	$(CXX) /nologo /std:c++17 /EHsc /Os $(MSVC_TEST_FLAGS) /Isrc /Fe:$(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp
 else
-	$(CXX) -std=c++17 -O2 -Isrc $(TEST_STATIC) -o $(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp $(TEST_LIBS)
+	$(CXX) -std=c++17 -Os -Isrc $(TEST_STATIC) -o $(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp $(TEST_LIBS)
 endif
 	$(RUN_TEST)
 
 test-http:
 ifeq ($(MSVC),1)
-	$(CXX) /nologo /std:c++17 /EHsc /O2 $(MSVC_TEST_FLAGS) /Isrc /D_WIN32_WINNT=0x0601 /Fe:$(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp ws2_32.lib iphlpapi.lib shell32.lib
+	$(CXX) /nologo /std:c++17 /EHsc /Os $(MSVC_TEST_FLAGS) /Isrc /D_WIN32_WINNT=0x0601 /Fe:$(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp ws2_32.lib iphlpapi.lib shell32.lib
 else
-	$(CXX) -std=c++17 -O2 -Isrc -D_WIN32_WINNT=0x0601 -pthread $(TEST_STATIC) -o $(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp $(TEST_LIBS)
+	$(CXX) -std=c++17 -Os -Isrc -D_WIN32_WINNT=0x0601 -pthread $(TEST_STATIC) -o $(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp $(TEST_LIBS)
 endif
 	$(RUN_HTTP_TEST)
 

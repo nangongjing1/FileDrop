@@ -448,7 +448,7 @@
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + dimension + '" height="' + dimension +
       '" viewBox="0 0 ' + dimension + ' ' + dimension + '" shape-rendering="crispEdges">' +
       '<rect width="100%" height="100%" fill="#ffffff"/>' +
-      '<g fill="#0b1120">' + rects.join('') + '</g></svg>'
+      '<g fill="#000000">' + rects.join('') + '</g></svg>'
     );
   }
 

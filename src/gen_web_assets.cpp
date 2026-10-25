@@ -37,51 +37,6 @@ const char kAsset0[] = R"FDWEB(<!doctype html>
   <div id="connBanner" class="conn-banner">与服务端的实时连接已断开，正在自动重连…</div>
 
   <main class="layout">
-    <section class="card wide">
-      <div class="card-head">
-        <h2>已连接设备 <span id="onlineCount" class="badge">0</span></h2>
-        <div class="tools">
-          <button id="selectAll" class="ghost small">全选</button>
-          <button id="sendSelected" class="primary small" disabled>发送到已选设备</button>
-        </div>
-      </div>
-      <div id="devices" class="devices">
-        <div class="empty" style="grid-column:1/-1">暂无设备，等待局域网设备访问客户端页面…</div>
-      </div>
-
-      <div class="card-head" style="margin:20px 0 12px">
-        <h2>文件请求 <span id="requestCount" class="badge">0</span></h2>
-        <span class="muted">请求会实时推送到客户端</span>
-      </div>
-      <div id="requests" class="stack">
-        <div class="empty">暂无请求</div>
-      </div>
-
-      <div id="networkHint" class="hint">正在获取网络信息…</div>
-      <div class="qr-panel">
-        <div id="qrImage" class="qr-image"></div>
-        <div class="qr-side">
-          <div class="qr-title">用手机扫码直接打开</div>
-          <div class="muted">扫码会打开 IP 地址，不依赖 DNS，也不用在手机上输入网址。</div>
-          <select id="qrTarget" class="qr-select" aria-label="选择二维码地址"></select>
-        </div>
-      </div>
-      <button id="troubleshootToggle" class="ghost small" style="margin-top:10px" hidden>打不开？查看排查步骤</button>
-      <div id="troubleshootPanel" class="hint" hidden>
-        <div><strong>1. 设备打不开客户端页面</strong></div>
-        <div>· 先用「可用地址」中的 IP 地址测试，排除域名解析问题。</div>
-        <div>· 确认客户端与服务端在同一个 Wi-Fi / 局域网，且服务端没有连接 VPN。</div>
-        <div>· Windows 防火墙需放行 TCP 和 UDP 端口，控制台会自动尝试添加规则；若 UAC 被拒绝，请以管理员运行一次本程序。</div>
-        <div><strong>2. 想用 <span class="domain-name">filedrop.ng</span> 访问</strong></div>
-        <div>· 把客户端的 DNS 手动设置为服务端 IP(Android/iOS 在 WLAN 设置里改静态 DNS)。</div>
-        <div>· 或修改客户端 hosts，加入启动时控制台显示的那一行记录。</div>
-        <div>· 手机不能改 hosts，只能用改 DNS 或直接访问 IP 的方式。</div>
-        <div><strong>3. 域名打不开</strong></div>
-        <div>· 域名需要设备把 DNS 指向服务端，或在局域网 DHCP 里下发；否则会提示「找不到服务器」。</div>
-        <div>· 请在地址栏输入完整地址：http://<span class="domain-name">filedrop.ng</span>/(若被改成 https:// 请改回 http://)。</div>
-      </div>
-    </section>
-
     <section class="card">
       <div class="card-head">
         <h2>待发送文件 <span id="stagingCount" class="badge">0</span></h2>
@@ -111,6 +66,63 @@ const char kAsset0[] = R"FDWEB(<!doctype html>
       <ul id="received" class="list">
         <li class="empty" style="border:none">尚未收到文件</li>
       </ul>
+    </section>
+
+    <div class="trio">
+      <section class="card">
+        <div class="card-head">
+          <h2>已连接设备 <span id="onlineCount" class="badge">0</span></h2>
+          <div class="tools">
+            <button id="selectAll" class="ghost small">全选</button>
+            <button id="sendSelected" class="primary small" disabled>发送到已选设备</button>
+          </div>
+        </div>
+        <div id="devices" class="devices">
+          <div class="empty" style="grid-column:1/-1">暂无设备，等待局域网设备访问客户端页面…</div>
+        </div>
+      </section>
+
+      <section class="card qr-card">
+        <div class="card-head">
+          <h2>扫码打开客户端</h2>
+        </div>
+        <div id="qrImage" class="qr-image"></div>
+        <label class="muted qr-target-label" for="qrTarget">切换二维码链接方式</label>
+        <select id="qrTarget" class="qr-select" aria-label="选择二维码地址"></select>
+        <div class="muted qr-tip">扫码会打开 IP 地址，不依赖 DNS，也不用在手机上输入网址。</div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>文件请求 <span id="requestCount" class="badge">0</span></h2>
+          <span class="muted">请求会实时推送到客户端</span>
+        </div>
+        <div id="requests" class="stack">
+          <div class="empty">暂无请求</div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card wide">
+      <div class="card-head">
+        <h2>网络与访问提示</h2>
+        <span class="muted">客户端地址与排查步骤</span>
+      </div>
+      <div id="networkHint" class="hint">正在获取网络信息…</div>
+      <button id="troubleshootToggle" class="ghost small" style="margin-top:10px" hidden>打不开？查看排查步骤</button>
+      <div id="troubleshootPanel" class="hint" hidden>
+        <div><strong>1. 设备打不开客户端页面</strong></div>
+        <div>· 先用「可用地址」中的 IP 地址测试，排除域名解析问题。</div>
+        <div>· 确认客户端与服务端在同一个 Wi-Fi / 局域网，且服务端没有连接 VPN。</div>
+        <div>· Windows 防火墙需放行 TCP 和 UDP 端口，控制台会自动尝试添加规则；若 UAC 被拒绝，请以管理员运行一次本程序。</div>
+        <div><strong>2. 想用 <span class="domain-name">filedrop.ng</span> 访问</strong></div>
+        <div>· 把客户端的 DNS 手动设置为服务端 IP(Android/iOS 在 WLAN 设置里改静态 DNS)。</div>
+        <div>· 或修改客户端 hosts，加入启动时控制台显示的那一行记录。</div>
+        <div>· 手机不能改 hosts，只能用改 DNS 或直接访问 IP 的方式。</div>
+        <div><strong>3. 域名打不开</strong></div>
+        <div>· 域名需要设备把 DNS 指向服务端，或在局域网 DHCP 里下发；否则会提示「找不到服务器」。</div>
+        <div>· 请在地址栏输入完整地址：http://<span class="domain-name">filedrop.ng</span>/(若被改成 https:// 请改回 http://)。</div>
+      </div>
     </section>
 
     <section class="card wide">
@@ -1808,16 +1820,29 @@ tr:last-child td {
   font-family: "Cascadia Mono", Consolas, monospace;
 }
 
-.qr-panel {
-  display: flex;
+.trio {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-top: 12px;
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
+}
+
+.trio .devices {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.qr-card .qr-image {
+  margin: 0 auto;
+}
+
+.qr-target-label {
+  display: block;
+  margin-top: 16px;
+}
+
+.qr-tip {
+  margin-top: 10px;
+  line-height: 1.6;
 }
 
 .qr-image {
@@ -1837,17 +1862,6 @@ tr:last-child td {
   display: block;
 }
 
-.qr-side {
-  flex: 1;
-  min-width: 220px;
-}
-
-.qr-title {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
 .qr-select {
   margin-top: 12px;
   width: 100%;
@@ -1858,6 +1872,11 @@ tr:last-child td {
   color: var(--text);
   font: inherit;
   font-size: 12.5px;
+}
+
+.qr-select option {
+  color: #000;
+  background: #fff;
 }
 
 .log-view {
@@ -1892,6 +1911,10 @@ tr:last-child td {
 
   .wide {
     grid-column: auto;
+  }
+
+  .trio {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .topbar {
@@ -3151,7 +3174,7 @@ const char kAsset6[] = R"FDWEB(/* 极简 QR 码生成器(字节模式 / 纠错�
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + dimension + '" height="' + dimension +
       '" viewBox="0 0 ' + dimension + ' ' + dimension + '" shape-rendering="crispEdges">' +
       '<rect width="100%" height="100%" fill="#ffffff"/>' +
-      '<g fill="#0b1120">' + rects.join('') + '</g></svg>'
+      '<g fill="#000000">' + rects.join('') + '</g></svg>'
     );
   }
 
