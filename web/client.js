@@ -252,7 +252,8 @@
     if (!snapshot) return;
 
     const server = snapshot.server || {};
-    $('#serverLabel').textContent = (server.hostname || 'filedrop.ng') + (server.port ? ':' + server.port : '');
+    const portSuffix = server.port && server.port !== 80 ? ':' + server.port : '';
+    $('#serverLabel').textContent = (server.hostname || 'filedrop.ng') + portSuffix;
 
     if (document.activeElement !== nameInput && snapshot.device && snapshot.device.name) {
       nameInput.value = snapshot.device.name;

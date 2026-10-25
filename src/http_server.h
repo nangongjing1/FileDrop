@@ -59,6 +59,11 @@ struct HttpRequest {
   std::string param(const std::string& key, const std::string& def = "") const;
 };
 
+enum class HeadParseResult { Ok, BadRequest, ChunkedNotSupported };
+
+// 解析 HTTP 请求头(不含空行后的正文)，便于在不建立连接的情况下测试。
+HeadParseResult httpParseRequestHead(const std::string& head, HttpRequest& request);
+
 class HttpResponse {
  public:
   explicit HttpResponse(socket_t socket);

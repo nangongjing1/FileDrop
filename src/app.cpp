@@ -8,6 +8,7 @@
 #include <sstream>
 #include <thread>
 
+#include "applog.h"
 #include "util.h"
 #include "web_assets.h"
 
@@ -56,23 +57,6 @@ std::string cleanDisplayName(const std::string& raw) {
     out.resize(cut);
   }
   return out.empty() ? "设备" : out;
-}
-
-std::string cleanRelPath(const std::string& raw) {
-  std::string normalized = raw;
-  std::replace(normalized.begin(), normalized.end(), '\\', '/');
-  std::istringstream stream(normalized);
-  std::string part;
-  std::string out;
-  while (std::getline(stream, part, '/')) {
-    if (part.empty() || part == "." || part == "..") continue;
-    part = util::sanitizeName(part);
-    if (part.empty()) continue;
-    if (!out.empty()) out += "/";
-    out += part;
-    if (out.size() > 300) break;
-  }
-  return out;
 }
 
 std::string fileJson(const FileEntry& file) {
@@ -164,6 +148,11 @@ void App::setRuntime(int port, const std::string& localIp) {
   localIp_ = localIp;
 }
 
+void App::setFirewallReport(const std::string& report) {
+  std::lock_guard<std::mutex> lock(firewallMutex_);
+  firewallReport_ = report;
+}
+
 std::string App::adminUrl() const {
   return "http://127.0.0.1:" + std::to_string(port_) + "/admin?t=" + adminToken_;
 }
@@ -240,6 +229,14 @@ void App::serveAsset(const std::string& key, HttpResponse& res) {
 
 void App::handleIndex(HttpRequest&, HttpResponse& res) { serveAsset("/", res); }
 
+void App::handleHealth(HttpRequest&, HttpResponse& res) {
+  std::ostringstream out;
+  out << "{\"ok\":true,\"app\":\"filedrop\",\"hostname\":" << util::jsonQuote(options_.hostname)
+      << ",\"port\":" << port_ << ",\"ip\":" << util::jsonQuote(localIp_)
+      << ",\"devices\":" << devices_.onlineCount() << ",\"dns\":" << (dnsActive_ ? "true" : "false") << "}";
+  sendJson(res, 200, out.str());
+}
+
 void App::handleAdminPage(HttpRequest& req, HttpResponse& res) {
   std::string t = req.param("t");
   if (!t.empty() && t == adminToken_) {
@@ -307,7 +304,7 @@ void App::handleClientUpload(HttpRequest& req, HttpResponse& res) {
     return;
   }
 
-  std::string relPath = cleanRelPath(req.param("path", fileName));
+  std::string relPath = util::normalizeRelPath(req.param("path", fileName));
   if (relPath.empty()) relPath = fileName;
   std::string batchId = req.param("batchId");
   if (batchId.empty()) batchId = util::randomHex(6);
@@ -497,6 +494,15 @@ void App::handleAdminState(HttpRequest& req, HttpResponse& res) {
   sendJson(res, 200, adminStateJson());
 }
 
+void App::handleAdminLog(HttpRequest& req, HttpResponse& res) {
+  if (!authorized(req)) {
+    sendError(res, 403, "需要管理权限");
+    return;
+  }
+  res.addHeader("Cache-Control", "no-store");
+  res.sendText(200, applog::tail(200), "text/plain; charset=utf-8");
+}
+
 void App::handleAdminUpload(HttpRequest& req, HttpResponse& res) {
   if (!authorized(req)) {
     sendError(res, 403, "需要管理权限");
@@ -509,7 +515,7 @@ void App::handleAdminUpload(HttpRequest& req, HttpResponse& res) {
     sendError(res, 400, "缺少文件名");
     return;
   }
-  std::string relPath = cleanRelPath(req.param("path", fileName));
+  std::string relPath = util::normalizeRelPath(req.param("path", fileName));
   if (relPath.empty()) relPath = fileName;
   std::string batchId = req.param("batchId");
   if (batchId.empty()) batchId = util::randomHex(6);
@@ -733,6 +739,11 @@ void App::markRequestFinished(const std::string& requestId, const std::string& d
   }
 }
 
+std::string App::firewallSnapshot() const {
+  std::lock_guard<std::mutex> lock(firewallMutex_);
+  return firewallReport_;
+}
+
 std::string App::adminStateJson() {
   std::ostringstream out;
   out << "{\"ok\":true,\"server\":{"
@@ -740,7 +751,28 @@ std::string App::adminStateJson() {
       << ",\"ip\":" << util::jsonQuote(localIp_) << ",\"clientUrl\":" << util::jsonQuote(clientUrl())
       << ",\"clientUrlIp\":" << util::jsonQuote(hostUrl(localIp_, port_))
       << ",\"dataDir\":" << util::jsonQuote(options_.dataDir) << ",\"dns\":" << (dnsActive_ ? "true" : "false")
-      << "}";
+      << ",\"firewall\":" << util::jsonQuote(firewallSnapshot());
+
+  out << ",\"aliases\":[";
+  for (size_t i = 0; i < options_.aliases.size(); ++i) {
+    if (i) out << ",";
+    out << util::jsonQuote(options_.aliases[i]);
+  }
+  out << "]";
+
+  auto interfaces = util::localInterfaces();
+  out << ",\"urls\":[";
+  size_t index = 0;
+  for (const auto& info : interfaces) {
+    if (index) out << ",";
+    out << "{\"ip\":" << util::jsonQuote(info.ip) << ",\"name\":" << util::jsonQuote(info.name)
+        << ",\"netmask\":" << util::jsonQuote(info.netmask)
+        << ",\"primary\":" << (info.ip == localIp_ ? "true" : "false")
+        << ",\"url\":" << util::jsonQuote(hostUrl(info.ip, port_)) << "}";
+    ++index;
+  }
+  out << "]";
+  out << "}";
 
   auto devices = devices_.snapshot();
   std::sort(devices.begin(), devices.end(), [](const DeviceInfo& a, const DeviceInfo& b) {
@@ -879,15 +911,15 @@ std::string App::clientStateJson(const std::string& deviceId) {
 
 void App::registerRoutes(HttpServer& server) {
   server.get("/", [this](HttpRequest& req, HttpResponse& res) { handleIndex(req, res); });
+  server.get("/health", [this](HttpRequest& req, HttpResponse& res) { handleHealth(req, res); });
   server.get("/admin", [this](HttpRequest& req, HttpResponse& res) { handleAdminPage(req, res); });
-  server.get("/app.css",
-             [this](HttpRequest&, HttpResponse& res) { serveAsset("/app.css", res); });
-  server.get("/client.js",
-             [this](HttpRequest&, HttpResponse& res) { serveAsset("/client.js", res); });
-  server.get("/admin.js",
-             [this](HttpRequest&, HttpResponse& res) { serveAsset("/admin.js", res); });
-  server.get("/favicon.svg",
-             [this](HttpRequest&, HttpResponse& res) { serveAsset("/favicon.svg", res); });
+
+  // 其余内嵌资源(样式、脚本、图标等)按实际打包内容自动注册。
+  for (const auto& asset : webAssets()) {
+    const std::string key = asset.first;
+    if (key == "/" || key == "/admin") continue;
+    server.get(key, [this, key](HttpRequest&, HttpResponse& res) { serveAsset(key, res); });
+  }
 
   server.get("/api/client/state",
              [this](HttpRequest& req, HttpResponse& res) { handleClientState(req, res); });
@@ -901,6 +933,7 @@ void App::registerRoutes(HttpServer& server) {
 
   server.get("/api/admin/state",
              [this](HttpRequest& req, HttpResponse& res) { handleAdminState(req, res); });
+  server.get("/api/admin/log", [this](HttpRequest& req, HttpResponse& res) { handleAdminLog(req, res); });
   server.get("/api/admin/events",
              [this](HttpRequest& req, HttpResponse& res) { handleAdminEvents(req, res); });
   server.put("/api/admin/upload",

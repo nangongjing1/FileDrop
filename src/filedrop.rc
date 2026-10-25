@@ -1,0 +1,9 @@
+/* Windows resource script: application icon.
+ *
+ * The .ico is rendered from web/favicon.svg; regenerate it with
+ *   make icon
+ * (or: python tools/make_icon.py web/favicon.svg src/filedrop.ico)
+ *
+ * Icon ID 1 is what Explorer, the taskbar and shortcuts pick up first.
+ */
+1 ICON "src/filedrop.ico"

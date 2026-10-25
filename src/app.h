@@ -14,6 +14,7 @@
 
 struct AppOptions {
   std::string hostname = "filedrop.ng";
+  std::vector<std::string> aliases;
   std::string dataDir = "filedrop-data";
   std::string bindAddress = "0.0.0.0";
   int port = 80;
@@ -37,18 +38,21 @@ class App {
   void registerRoutes(HttpServer& server);
   void setRuntime(int port, const std::string& localIp);
   void setDnsActive(bool active) { dnsActive_ = active; }
+  void setFirewallReport(const std::string& report);
   void stop() { stopping_ = true; }
 
   std::string adminToken() const { return adminToken_; }
   std::string adminUrl() const;
   std::string clientUrl() const;
   std::string localIp() const { return localIp_; }
+  std::string firewallSnapshot() const;
   int port() const { return port_; }
   std::string dataDirectory() const;
 
  private:
   void serveAsset(const std::string& key, HttpResponse& res);
   void handleIndex(HttpRequest& req, HttpResponse& res);
+  void handleHealth(HttpRequest& req, HttpResponse& res);
   void handleAdminPage(HttpRequest& req, HttpResponse& res);
   void handleClientEvents(HttpRequest& req, HttpResponse& res);
   void handleClientState(HttpRequest& req, HttpResponse& res);
@@ -56,6 +60,7 @@ class App {
   void handleClientAck(HttpRequest& req, HttpResponse& res);
   void handleDownload(HttpRequest& req, HttpResponse& res);
   void handleAdminState(HttpRequest& req, HttpResponse& res);
+  void handleAdminLog(HttpRequest& req, HttpResponse& res);
   void handleAdminEvents(HttpRequest& req, HttpResponse& res);
   void handleAdminUpload(HttpRequest& req, HttpResponse& res);
   void handleAdminSend(HttpRequest& req, HttpResponse& res);
@@ -78,6 +83,8 @@ class App {
   AppOptions options_;
   std::string adminToken_;
   std::string localIp_;
+  mutable std::mutex firewallMutex_;
+  std::string firewallReport_;
   int port_ = 80;
   std::atomic<bool> dnsActive_{false};
 

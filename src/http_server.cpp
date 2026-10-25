@@ -4,6 +4,7 @@
 #include <cstring>
 #include <sstream>
 
+#include "applog.h"
 #include "util.h"
 
 #ifndef _WIN32
@@ -137,6 +138,77 @@ std::string HttpRequest::param(const std::string& key, const std::string& def) c
   return it == params.end() ? def : it->second;
 }
 
+HeadParseResult httpParseRequestHead(const std::string& head, HttpRequest& request) {
+  size_t lineEnd = head.find("\r\n");
+  std::string requestLine = head.substr(0, lineEnd == std::string::npos ? head.size() : lineEnd);
+  std::istringstream requestStream(requestLine);
+  std::string method, target, version;
+  requestStream >> method >> target >> version;
+  if (method.empty() || target.empty()) return HeadParseResult::BadRequest;
+  if (!version.empty() && version.rfind("HTTP/", 0) != 0) return HeadParseResult::BadRequest;
+
+  request.method = method;
+  request.target = target;
+
+  size_t queryPos = target.find('?');
+  std::string rawPath = queryPos == std::string::npos ? target : target.substr(0, queryPos);
+  request.query = queryPos == std::string::npos ? std::string() : target.substr(queryPos + 1);
+  request.path = util::urlDecode(rawPath);
+
+  size_t pos = lineEnd == std::string::npos ? head.size() : lineEnd + 2;
+  while (pos < head.size()) {
+    size_t end = head.find("\r\n", pos);
+    if (end == std::string::npos) end = head.size();
+    std::string line = head.substr(pos, end - pos);
+    pos = end + 2;
+    if (line.empty()) continue;
+    size_t colon = line.find(':');
+    if (colon == std::string::npos) continue;
+    std::string key = util::toLower(util::trim(line.substr(0, colon)));
+    std::string value = util::trim(line.substr(colon + 1));
+    if (key.empty()) continue;
+    auto it = request.headers.find(key);
+    if (it == request.headers.end()) {
+      request.headers.emplace(std::move(key), std::move(value));
+    } else {
+      it->second += ", " + value;
+    }
+  }
+
+  if (!request.query.empty()) {
+    size_t start = 0;
+    while (start <= request.query.size()) {
+      size_t amp = request.query.find('&', start);
+      std::string pair = request.query.substr(start, amp == std::string::npos ? std::string::npos : amp - start);
+      if (!pair.empty()) {
+        size_t eq = pair.find('=');
+        if (eq == std::string::npos) {
+          request.params[util::urlDecode(pair)] = "";
+        } else {
+          request.params[util::urlDecode(pair.substr(0, eq))] = util::urlDecode(pair.substr(eq + 1));
+        }
+      }
+      if (amp == std::string::npos) break;
+      start = amp + 1;
+    }
+  }
+
+  std::string transferEncoding = util::toLower(request.header("transfer-encoding"));
+  if (!transferEncoding.empty() && transferEncoding.find("chunked") != std::string::npos) {
+    return HeadParseResult::ChunkedNotSupported;
+  }
+
+  std::string lengthHeader = request.header("content-length");
+  if (!lengthHeader.empty()) {
+    try {
+      request.contentLength = std::stoull(lengthHeader);
+    } catch (...) {
+      return HeadParseResult::BadRequest;
+    }
+  }
+  return HeadParseResult::Ok;
+}
+
 HttpResponse::HttpResponse(socket_t socket) : socket_(socket) {}
 
 void HttpResponse::addHeader(const std::string& name, const std::string& value) {
@@ -223,7 +295,13 @@ bool HttpServer::start(const std::string& bindAddress, int port, std::string& er
   }
 
   int reuse = 1;
+#ifdef _WIN32
+  // Windows 上 SO_REUSEADDR 会允许与其它进程共用端口，导致监听成功却收不到连接，
+  // 因此改用独占模式，端口被占用时能明确失败并回退到备用端口。
+  setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&reuse), sizeof reuse);
+#else
   setsockopt(s, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof reuse);
+#endif
 
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
@@ -337,82 +415,33 @@ void HttpServer::handleConnection(socket_t client, std::string remoteIp) {
   std::string head = buffer.substr(0, headEnd);
   buffer.erase(0, headEnd + 4);
 
-  size_t lineEnd = head.find("\r\n");
-  std::string requestLine = head.substr(0, lineEnd == std::string::npos ? head.size() : lineEnd);
-  std::istringstream requestStream(requestLine);
-  std::string method, target;
-  requestStream >> method >> target;
-  if (method.empty() || target.empty()) {
+  HttpRequest request;
+  request.remoteIp = std::move(remoteIp);
+
+  HeadParseResult parsed = httpParseRequestHead(head, request);
+  if (parsed == HeadParseResult::BadRequest) {
     HttpResponse response(client);
-    response.sendText(400, "{\"ok\":false,\"error\":\"bad request\"}");
+    response.sendText(400, "{\"ok\":false,\"error\":\"请求格式无效\"}");
     net::closeSocket(client);
     return;
   }
-
-  HttpRequest request;
-  request.method = method;
-  request.target = target;
-  request.remoteIp = std::move(remoteIp);
-
-  size_t queryPos = target.find('?');
-  std::string rawPath = queryPos == std::string::npos ? target : target.substr(0, queryPos);
-  request.query = queryPos == std::string::npos ? std::string() : target.substr(queryPos + 1);
-  request.path = util::urlDecode(rawPath);
-
-  size_t pos = lineEnd == std::string::npos ? head.size() : lineEnd + 2;
-  while (pos < head.size()) {
-    size_t end = head.find("\r\n", pos);
-    if (end == std::string::npos) end = head.size();
-    std::string line = head.substr(pos, end - pos);
-    pos = end + 2;
-    size_t colon = line.find(':');
-    if (colon == std::string::npos) continue;
-    std::string key = util::toLower(util::trim(line.substr(0, colon)));
-    std::string value = util::trim(line.substr(colon + 1));
-    auto it = request.headers.find(key);
-    if (it == request.headers.end()) {
-      request.headers.emplace(std::move(key), std::move(value));
-    } else {
-      it->second += ", " + value;
-    }
-  }
-
-  if (request.query.find('=') != std::string::npos || !request.query.empty()) {
-    size_t start = 0;
-    while (start <= request.query.size()) {
-      size_t amp = request.query.find('&', start);
-      std::string pair = request.query.substr(start, amp == std::string::npos ? std::string::npos : amp - start);
-      if (!pair.empty()) {
-        size_t eq = pair.find('=');
-        if (eq == std::string::npos) {
-          request.params[util::urlDecode(pair)] = "";
-        } else {
-          request.params[util::urlDecode(pair.substr(0, eq))] = util::urlDecode(pair.substr(eq + 1));
-        }
-      }
-      if (amp == std::string::npos) break;
-      start = amp + 1;
-    }
-  }
-
-  std::string transferEncoding = util::toLower(request.header("transfer-encoding"));
-  if (!transferEncoding.empty() && transferEncoding.find("chunked") != std::string::npos) {
+  if (parsed == HeadParseResult::ChunkedNotSupported) {
     HttpResponse response(client);
     response.sendText(411, "{\"ok\":false,\"error\":\"需要 Content-Length\"}");
     net::closeSocket(client);
     return;
   }
 
-  std::string lengthHeader = request.header("content-length");
-  if (!lengthHeader.empty()) {
-    try {
-      request.contentLength = std::stoull(lengthHeader);
-    } catch (...) {
-      request.contentLength = 0;
-    }
-  }
-
   bool expectContinue = util::toLower(request.header("expect")).find("100-continue") != std::string::npos;
+  // 跳过管理端自身的轮询/SSE 请求，避免把日志刷满
+  const std::string& logTarget = request.target;
+  bool noisyAdminPoll = logTarget.rfind("/api/admin/state", 0) == 0 ||
+                        logTarget.rfind("/api/admin/events", 0) == 0 ||
+                        logTarget.rfind("/api/admin/log", 0) == 0;
+  if (!noisyAdminPoll) {
+    applog::info("HTTP " + request.method + " " + request.target + " 来自 " + request.remoteIp +
+                 " Host=" + request.header("host") + " UA=\"" + request.header("user-agent") + "\"");
+  }
   if (expectContinue) {
     net::sendAll(client, "HTTP/1.1 100 Continue\r\n\r\n", 25);
   }

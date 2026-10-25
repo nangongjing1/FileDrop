@@ -226,6 +226,7 @@
 
   function renderServer() {
     const server = snapshot.server || {};
+    const hostname = server.hostname || 'filedrop.ng';
     $('#clientUrl').textContent = server.clientUrl || '';
     $('#clientUrl').title = (server.clientUrlIp || '') + '  ' + (server.dataDir || '');
     $('#serverIp').textContent = server.ip || '未知地址';
@@ -233,21 +234,121 @@
 
     const hint = $('#networkHint');
     hint.textContent = '';
+
     const line1 = el('div');
     line1.appendChild(document.createTextNode('客户端访问：'));
     line1.appendChild(el('code', null, server.clientUrl || ''));
-    const line2 = el('div');
-    if (server.dns) {
-      line2.appendChild(document.createTextNode('把其它设备的 DNS 指向 '));
-      line2.appendChild(el('code', null, server.ip || ''));
-      line2.appendChild(document.createTextNode('，即可通过 ' + (server.hostname || 'filedrop.ng') + ' 访问本服务。'));
-    } else {
-      line2.appendChild(document.createTextNode('内置 DNS 未启用，可直接使用 '));
-      line2.appendChild(el('code', null, server.clientUrlIp || ''));
-      line2.appendChild(document.createTextNode('，或为客户端修改 hosts。'));
+    if (server.aliases && server.aliases.length) {
+      line1.appendChild(document.createTextNode('(别名 ' + server.aliases.join(' / ') + ' 同样可用)'));
     }
     hint.appendChild(line1);
+
+    const line2 = el('div');
+    if (server.dns) {
+      line2.appendChild(document.createTextNode('把其它设备的 DNS 改成 '));
+      line2.appendChild(el('code', null, server.ip || ''));
+      line2.appendChild(document.createTextNode(' 后，就能用 ' + hostname + ' 打开客户端。'));
+    } else {
+      line2.appendChild(document.createTextNode('内置 DNS 未启动，请让设备直接访问下面的 IP 地址，或在设备 hosts 中加入记录。'));
+    }
     hint.appendChild(line2);
+
+    const urls = server.urls || [];
+    if (urls.length) {
+      const line3 = el('div');
+      line3.appendChild(document.createTextNode('可用地址(点击打开)：'));
+      urls.forEach((entry) => {
+        const link = el('a', 'url-chip', entry.url);
+        link.href = entry.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        if (entry.primary) link.classList.add('primary');
+        link.title = (entry.name || '') + ' · ' + (entry.netmask || '') + (entry.primary ? ' · 当前推荐' : '');
+        line3.appendChild(link);
+      });
+      hint.appendChild(line3);
+      if (urls.length > 1) {
+        const line4 = el('div', 'muted-line', '多块网卡时请选择与客户端同一网段的地址；如自动选择的地址不对，可用 --ip 参数指定。');
+        hint.appendChild(line4);
+      }
+    }
+
+    const line5 = el('div', 'muted-line');
+    line5.appendChild(document.createTextNode('防火墙：' + (server.firewall || '未检查')));
+    hint.appendChild(line5);
+
+    const toggle = $('#troubleshootToggle');
+    toggle.hidden = false;
+
+    document.querySelectorAll('.domain-name').forEach((node) => {
+      node.textContent = hostname;
+    });
+
+    renderQr(server);
+  }
+
+  let qrTargets = [];
+
+  function renderQr(server) {
+    const host = $('#qrImage');
+    const select = $('#qrTarget');
+    if (!host || !select) return;
+
+    qrTargets = [];
+    const urls = server.urls || [];
+    urls.filter((entry) => entry.primary).forEach((entry) => {
+      qrTargets.push({ label: 'IP 直连 · ' + entry.ip + '(推荐)', url: entry.url });
+    });
+    urls.filter((entry) => !entry.primary).forEach((entry) => {
+      qrTargets.push({ label: 'IP 直连 · ' + entry.ip, url: entry.url });
+    });
+    if (server.clientUrl) qrTargets.push({ label: '域名 · ' + hostnameOf(server), url: server.clientUrl });
+    if (!qrTargets.length && server.clientUrlIp) {
+      qrTargets.push({ label: 'IP 直连', url: server.clientUrlIp });
+    }
+
+    const previous = select.value;
+    select.textContent = '';
+    qrTargets.forEach((target, index) => {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = target.label + ' — ' + target.url;
+      select.appendChild(option);
+    });
+    let selected = qrTargets.findIndex((target) => target.url === previous);
+    if (selected < 0) selected = 0;
+    select.value = String(selected);
+    if (!select.dataset.bound) {
+      select.dataset.bound = '1';
+      select.addEventListener('change', () => drawQr(Number(select.value)));
+    }
+    drawQr(selected);
+  }
+
+  function hostnameOf(server) {
+    return server.hostname || 'filedrop.ng';
+  }
+
+  function drawQr(index) {
+    const host = $('#qrImage');
+    const target = qrTargets[index];
+    if (!host || !target) return;
+    if (!window.FiledropQR) {
+      host.textContent = '无法生成二维码';
+      return;
+    }
+    try {
+      host.innerHTML = window.FiledropQR.toSvg(target.url, { scale: 5, quiet: 2 });
+    } catch (err) {
+      host.textContent = '二维码生成失败：' + err.message;
+    }
+  }
+
+  function toggleTroubleshoot() {
+    const panel = $('#troubleshootPanel');
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    $('#troubleshootToggle').textContent = panel.hidden ? '打不开？查看排查步骤' : '收起排查步骤';
   }
 
   function updateSendButton() {
@@ -774,8 +875,37 @@
     if (!document.hidden) loadState();
   });
 
+  async function refreshLog() {
+    const view = $('#logView');
+    if (!view) return;
+    try {
+      const response = await fetch('/api/admin/log', { cache: 'no-store' });
+      const text = await response.text();
+      if (!response.ok) {
+        view.textContent = '读取日志失败：' + (text || response.status);
+        return;
+      }
+      view.textContent = text.trim() ? text : '(日志为空)';
+      view.scrollTop = view.scrollHeight;
+    } catch (err) {
+      view.textContent = '读取日志失败：' + err.message;
+    }
+  }
+
   setAdminOnline(false);
   connectEvents();
   loadState();
   setInterval(loadState, 8000);
+
+  const troubleshootToggle = $('#troubleshootToggle');
+  if (troubleshootToggle) troubleshootToggle.addEventListener('click', toggleTroubleshoot);
+
+  const refreshLogButton = $('#refreshLog');
+  if (refreshLogButton) {
+    refreshLogButton.addEventListener('click', () => {
+      refreshLog();
+      const path = $('#logPath');
+      if (path && snapshot && snapshot.server) path.textContent = (snapshot.server.dataDir || '') + '/filedrop.log';
+    });
+  }
 })();

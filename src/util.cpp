@@ -10,6 +10,8 @@
 #include <random>
 #include <sstream>
 
+#include "http_server.h"
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -24,6 +26,7 @@
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <ifaddrs.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -75,15 +78,13 @@ std::wstring wideFromUtf8(const std::string& s) {
 #endif
 
 #ifdef _WIN32
-struct AdapterInfo {
-  DWORD index = 0;
-  std::string ip;
-  bool hasGateway = false;
-  std::string description;
+struct AdapterEntry {
+  unsigned long index = 0;
+  NetInterface info;
 };
 
-std::vector<AdapterInfo> enumerateAdapters() {
-  std::vector<AdapterInfo> result;
+std::vector<AdapterEntry> enumerateAdapters() {
+  std::vector<AdapterEntry> result;
   ULONG size = 0;
   ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_INCLUDE_GATEWAYS;
   if (GetAdaptersAddresses(AF_INET, flags, nullptr, nullptr, &size) != ERROR_BUFFER_OVERFLOW) return result;
@@ -95,34 +96,45 @@ std::vector<AdapterInfo> enumerateAdapters() {
   for (auto* a = addrs; a != nullptr; a = a->Next) {
     if (a->OperStatus != IfOperStatusUp) continue;
     if (a->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
-    AdapterInfo info;
-    info.index = a->IfIndex;
-    info.description = utf8FromWide(a->Description ? a->Description : L"");
-    info.hasGateway = a->FirstGatewayAddress != nullptr;
+    AdapterEntry entry;
+    entry.index = a->IfIndex;
+    entry.info.name = utf8FromWide(a->FriendlyName ? a->FriendlyName : (a->Description ? a->Description : L""));
+    entry.info.hasGateway = a->FirstGatewayAddress != nullptr;
+    for (auto* gateway = a->FirstGatewayAddress; gateway != nullptr; gateway = gateway->Next) {
+      if (!gateway->Address.lpSockaddr || gateway->Address.lpSockaddr->sa_family != AF_INET) continue;
+      char text[INET_ADDRSTRLEN] = {0};
+      auto* sin = reinterpret_cast<sockaddr_in*>(gateway->Address.lpSockaddr);
+      if (inet_ntop(AF_INET, &sin->sin_addr, text, sizeof text)) {
+        entry.info.gateway = text;
+        break;
+      }
+    }
     for (auto* ua = a->FirstUnicastAddress; ua != nullptr; ua = ua->Next) {
       if (!ua->Address.lpSockaddr) continue;
       if (ua->Address.lpSockaddr->sa_family != AF_INET) continue;
       char text[INET_ADDRSTRLEN] = {0};
       auto* sin = reinterpret_cast<sockaddr_in*>(ua->Address.lpSockaddr);
-      if (inet_ntop(AF_INET, &sin->sin_addr, text, sizeof text)) {
-        info.ip = text;
-        break;
-      }
+      if (!inet_ntop(AF_INET, &sin->sin_addr, text, sizeof text)) continue;
+      entry.info.ip = text;
+      int prefix = static_cast<int>(ua->OnLinkPrefixLength);
+      if (prefix <= 0 || prefix > 32) prefix = 24;
+      entry.info.prefix = prefix;
+      entry.info.netmask = prefixToNetmask(prefix);
+      break;
     }
-    if (info.ip.empty()) continue;
-    result.push_back(info);
+    if (entry.info.ip.empty()) continue;
+    result.push_back(entry);
   }
   return result;
 }
 #else
-struct AdapterInfo {
-  std::string ip;
-  bool hasGateway = false;
-  std::string description;
+struct AdapterEntry {
+  unsigned long index = 0;
+  NetInterface info;
 };
 
-std::vector<AdapterInfo> enumerateAdapters() {
-  std::vector<AdapterInfo> result;
+std::vector<AdapterEntry> enumerateAdapters() {
+  std::vector<AdapterEntry> result;
   ifaddrs* list = nullptr;
   if (getifaddrs(&list) != 0) return result;
   for (auto* it = list; it != nullptr; it = it->ifa_next) {
@@ -131,11 +143,23 @@ std::vector<AdapterInfo> enumerateAdapters() {
     char text[INET_ADDRSTRLEN] = {0};
     auto* sin = reinterpret_cast<sockaddr_in*>(it->ifa_addr);
     if (!inet_ntop(AF_INET, &sin->sin_addr, text, sizeof text)) continue;
-    AdapterInfo info;
-    info.ip = text;
-    info.description = it->ifa_name ? it->ifa_name : "";
-    info.hasGateway = true;
-    result.push_back(info);
+
+    int prefix = 24;
+    if (it->ifa_netmask && it->ifa_netmask->sa_family == AF_INET) {
+      auto* mask = reinterpret_cast<sockaddr_in*>(it->ifa_netmask);
+      uint32_t bits = ntohl(mask->sin_addr.s_addr);
+      int count = 0;
+      while (count < 32 && (bits & (0x80000000u >> count))) ++count;
+      prefix = count;
+    }
+
+    AdapterEntry entry;
+    entry.info.ip = text;
+    entry.info.name = it->ifa_name ? it->ifa_name : "";
+    entry.info.prefix = prefix;
+    entry.info.netmask = prefixToNetmask(prefix);
+    entry.info.hasGateway = true;
+    result.push_back(entry);
   }
   freeifaddrs(list);
   return result;
@@ -147,6 +171,109 @@ bool isLinkLocal(const std::string& ip) {
 }
 
 }  // namespace
+
+std::string prefixToNetmask(int prefix) {
+  if (prefix < 0) prefix = 0;
+  if (prefix > 32) prefix = 32;
+  uint32_t mask = prefix == 0 ? 0 : (0xFFFFFFFFu << (32 - prefix));
+  char text[INET_ADDRSTRLEN] = {0};
+  uint32_t networkOrder = htonl(mask);
+  if (!inet_ntop(AF_INET, &networkOrder, text, sizeof text)) return "0.0.0.0";
+  return text;
+}
+
+bool parseIPv4(const std::string& text, uint32_t& hostOrder) {
+  in_addr addr{};
+  if (inet_pton(AF_INET, text.c_str(), &addr) != 1) return false;
+  hostOrder = ntohl(addr.s_addr);
+  return true;
+}
+
+bool isPrivateIPv4(const std::string& ip) {
+  uint32_t value = 0;
+  if (!parseIPv4(ip, value)) return false;
+  uint32_t a = (value >> 24) & 0xFF;
+  uint32_t b = (value >> 16) & 0xFF;
+  if (a == 10) return true;
+  if (a == 172 && b >= 16 && b <= 31) return true;
+  if (a == 192 && b == 168) return true;
+  return false;
+}
+
+std::vector<NetInterface> localInterfaces() {
+  std::vector<NetInterface> out;
+  for (const auto& entry : enumerateAdapters()) {
+    if (isLinkLocal(entry.info.ip)) continue;
+    out.push_back(entry.info);
+  }
+  return out;
+}
+
+std::string localIPv4() {
+  auto entries = enumerateAdapters();
+  std::vector<NetInterface> usable;
+  for (const auto& entry : entries) {
+    if (!isLinkLocal(entry.info.ip)) usable.push_back(entry.info);
+  }
+  if (usable.empty()) {
+    if (!entries.empty()) return entries.front().info.ip;
+    return "127.0.0.1";
+  }
+
+#ifdef _WIN32
+  DWORD bestIndex = 0;
+  IPAddr target = inet_addr("8.8.8.8");
+  if (GetBestInterface(target, &bestIndex) == NO_ERROR && bestIndex != 0) {
+    for (const auto& entry : entries) {
+      if (entry.index == bestIndex && !isLinkLocal(entry.info.ip)) return entry.info.ip;
+    }
+  }
+#endif
+
+  for (const auto& info : usable) {
+    if (info.hasGateway) return info.ip;
+  }
+  return usable.front().ip;
+}
+
+std::string primaryLocalIp() { return localIPv4(); }
+
+std::string selectLocalIpFor(const std::string& peerIp) {
+  uint32_t peer = 0;
+  auto interfaces = localInterfaces();
+  if (interfaces.empty()) return localIPv4();
+  if (!parseIPv4(peerIp, peer)) return localIPv4();
+
+  for (const auto& info : interfaces) {
+    uint32_t local = 0;
+    if (!parseIPv4(info.ip, local)) continue;
+    if (!info.hasGateway) continue;
+    uint32_t mask = info.prefix >= 32 ? 0xFFFFFFFFu : (info.prefix <= 0 ? 0 : (0xFFFFFFFFu << (32 - info.prefix)));
+    if ((local & mask) == (peer & mask)) return info.ip;
+  }
+  for (const auto& info : interfaces) {
+    uint32_t local = 0;
+    if (!parseIPv4(info.ip, local)) continue;
+    uint32_t mask = info.prefix >= 32 ? 0xFFFFFFFFu : (info.prefix <= 0 ? 0 : (0xFFFFFFFFu << (32 - info.prefix)));
+    if ((local & mask) == (peer & mask)) return info.ip;
+  }
+
+  size_t bestBits = 0;
+  std::string best;
+  for (const auto& info : interfaces) {
+    uint32_t local = 0;
+    if (!parseIPv4(info.ip, local)) continue;
+    uint32_t diff = local ^ peer;
+    size_t bits = 0;
+    while (bits < 32 && (diff & (0x80000000u >> bits)) == 0) ++bits;
+    if (bits > bestBits) {
+      bestBits = bits;
+      best = info.ip;
+    }
+  }
+  if (bestBits >= 8) return best;
+  return localIPv4();
+}
 
 int64_t nowMs() {
   using namespace std::chrono;
@@ -267,6 +394,23 @@ std::string sanitizeName(const std::string& name) {
   return out;
 }
 
+std::string normalizeRelPath(const std::string& raw) {
+  std::string normalized = raw;
+  std::replace(normalized.begin(), normalized.end(), '\\', '/');
+  std::istringstream stream(normalized);
+  std::string part;
+  std::string out;
+  while (std::getline(stream, part, '/')) {
+    if (part.empty() || part == "." || part == "..") continue;
+    part = sanitizeName(part);
+    if (part.empty()) continue;
+    if (!out.empty()) out += "/";
+    out += part;
+    if (out.size() > 300) break;
+  }
+  return out;
+}
+
 std::string trim(const std::string& s) {
   size_t start = 0;
   size_t end = s.size();
@@ -281,47 +425,41 @@ std::string toLower(std::string s) {
   return s;
 }
 
-std::string localIPv4() {
-  auto adapters = enumerateAdapters();
-  if (adapters.empty()) return "127.0.0.1";
-
-#ifdef _WIN32
-  DWORD bestIndex = 0;
-  IPAddr target = inet_addr("8.8.8.8");
-  if (GetBestInterface(target, &bestIndex) == NO_ERROR && bestIndex != 0) {
-    for (const auto& a : adapters) {
-      if (a.index == bestIndex && !isLinkLocal(a.ip)) return a.ip;
-    }
+std::string defaultGateway() {
+  for (const auto& info : localInterfaces()) {
+    if (!info.gateway.empty() && !isLinkLocal(info.gateway)) return info.gateway;
   }
-#endif
-
-  for (const auto& a : adapters) {
-    if (!isLinkLocal(a.ip) && a.hasGateway) return a.ip;
-  }
-  for (const auto& a : adapters) {
-    if (!isLinkLocal(a.ip)) return a.ip;
-  }
-  return adapters.front().ip;
+  return "";
 }
 
 std::string systemDnsServer() {
+  auto servers = systemDnsServers();
+  return servers.empty() ? std::string() : servers.front();
+}
+
+std::vector<std::string> systemDnsServers() {
+  std::vector<std::string> servers;
 #ifdef _WIN32
   ULONG size = 0;
   ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_UNICAST;
-  if (GetAdaptersAddresses(AF_INET, flags, nullptr, nullptr, &size) != ERROR_BUFFER_OVERFLOW) return "";
+  if (GetAdaptersAddresses(AF_INET, flags, nullptr, nullptr, &size) != ERROR_BUFFER_OVERFLOW) return servers;
   std::vector<char> buffer(size);
   auto* addrs = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
-  if (GetAdaptersAddresses(AF_INET, flags, nullptr, addrs, &size) != NO_ERROR) return "";
+  if (GetAdaptersAddresses(AF_INET, flags, nullptr, addrs, &size) != NO_ERROR) return servers;
   for (auto* a = addrs; a != nullptr; a = a->Next) {
     if (a->OperStatus != IfOperStatusUp) continue;
     for (auto* dns = a->FirstDnsServerAddress; dns != nullptr; dns = dns->Next) {
       if (!dns->Address.lpSockaddr || dns->Address.lpSockaddr->sa_family != AF_INET) continue;
       char text[INET_ADDRSTRLEN] = {0};
       auto* sin = reinterpret_cast<sockaddr_in*>(dns->Address.lpSockaddr);
-      if (inet_ntop(AF_INET, &sin->sin_addr, text, sizeof text) && !isLinkLocal(text)) return text;
+      if (!inet_ntop(AF_INET, &sin->sin_addr, text, sizeof text) || isLinkLocal(text)) continue;
+      bool duplicate = false;
+      for (const auto& existing : servers) {
+        if (existing == text) duplicate = true;
+      }
+      if (!duplicate) servers.push_back(text);
     }
   }
-  return "";
 #else
   std::ifstream in("/etc/resolv.conf");
   std::string line;
@@ -329,9 +467,68 @@ std::string systemDnsServer() {
     std::istringstream iss(line);
     std::string key, value;
     iss >> key >> value;
-    if (key == "nameserver" && !value.empty()) return value;
+    if (key == "nameserver" && !value.empty()) servers.push_back(value);
+  }
+#endif
+  return servers;
+}
+
+bool probeDnsServer(const std::string& ip, int timeoutMs) {
+  uint32_t target = 0;
+  if (!parseIPv4(ip, target)) return false;
+
+  socket_t s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (s == kInvalidSocket) return false;
+  net::setRecvTimeout(s, timeoutMs);
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(53);
+  addr.sin_addr.s_addr = htonl(target);
+
+  const uint8_t query[] = {0x46, 0x44, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                           0x07, 'e',  'x',  'a',  'm',  'p',  'l',  'e',  0x03, 'c',  'o',  'm',
+                           0x00, 0x00, 0x01, 0x00, 0x01};
+  bool ok = false;
+  if (sendto(s, reinterpret_cast<const char*>(query), sizeof query, 0, reinterpret_cast<sockaddr*>(&addr),
+             sizeof addr) > 0) {
+    char buffer[512];
+    int received = recv(s, buffer, sizeof buffer, 0);
+    ok = received >= 12 && (static_cast<uint8_t>(buffer[0]) == 0x46);
+  }
+  net::closeSocket(s);
+  return ok;
+}
+
+std::string wifiSsid() {
+#ifdef _WIN32
+  int exitCode = 0;
+  std::string output = runProcess("netsh.exe", "wlan show interfaces", false, exitCode);
+  size_t pos = 0;
+  while (pos < output.size()) {
+    size_t end = output.find('\n', pos);
+    if (end == std::string::npos) end = output.size();
+    std::string line = output.substr(pos, end - pos);
+    pos = end + 1;
+    size_t colon = line.find(':');
+    if (colon == std::string::npos) continue;
+    std::string key = trim(line.substr(0, colon));
+    if (key == "SSID") {
+      std::string value = trim(line.substr(colon + 1));
+      if (!value.empty()) return value;
+    }
   }
   return "";
+#else
+  return "";
+#endif
+}
+
+std::string hostsFilePath() {
+#ifdef _WIN32
+  return "C:\\Windows\\System32\\drivers\\etc\\hosts";
+#else
+  return "/etc/hosts";
 #endif
 }
 
@@ -351,6 +548,170 @@ bool openBrowser(const std::string& url) {
     _exit(1);
   }
   return pid > 0;
+#endif
+}
+
+bool probeHttp(const std::string& ip, int port, int timeoutMs) {
+  socket_t s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (s == kInvalidSocket) return false;
+
+  sockaddr_in target{};
+  target.sin_family = AF_INET;
+  target.sin_port = htons(static_cast<uint16_t>(port));
+  if (inet_pton(AF_INET, ip.c_str(), &target.sin_addr) != 1) {
+    net::closeSocket(s);
+    return false;
+  }
+
+#ifdef _WIN32
+  u_long nonBlocking = 1;
+  ioctlsocket(s, FIONBIO, &nonBlocking);
+#else
+  int flags = fcntl(s, F_GETFL, 0);
+  fcntl(s, F_SETFL, flags | O_NONBLOCK);
+#endif
+
+  bool ok = false;
+  int connected = connect(s, reinterpret_cast<sockaddr*>(&target), sizeof target);
+  if (connected == 0) {
+    ok = true;
+  } else {
+    fd_set writeSet;
+    FD_ZERO(&writeSet);
+    FD_SET(s, &writeSet);
+    timeval tv{};
+    tv.tv_sec = timeoutMs / 1000;
+    tv.tv_usec = (timeoutMs % 1000) * 1000;
+    int ready = select(static_cast<int>(s) + 1, nullptr, &writeSet, nullptr, &tv);
+    if (ready > 0) {
+      int error = 0;
+#ifdef _WIN32
+      int len = sizeof error;
+#else
+      socklen_t len = sizeof error;
+#endif
+      getsockopt(s, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &len);
+      ok = error == 0;
+    }
+  }
+
+  if (ok) {
+#ifdef _WIN32
+    u_long blocking = 0;
+    ioctlsocket(s, FIONBIO, &blocking);
+#else
+    flags = fcntl(s, F_GETFL, 0);
+    if (flags >= 0) fcntl(s, F_SETFL, flags & ~O_NONBLOCK);
+#endif
+    const char request[] = "GET /health HTTP/1.1\r\nHost: health\r\nConnection: close\r\n\r\n";
+    net::setSendTimeout(s, timeoutMs);
+    net::setRecvTimeout(s, timeoutMs);
+    if (net::sendAll(s, request, sizeof request - 1)) {
+      char buffer[128] = {0};
+      int received = recv(s, buffer, sizeof buffer - 1, 0);
+      if (received <= 0 || std::string(buffer).find(" 200 ") == std::string::npos) ok = false;
+    } else {
+      ok = false;
+    }
+  }
+
+  net::closeSocket(s);
+  return ok;
+}
+
+std::string runProcess(const std::string& file, const std::string& args, bool elevate, int& exitCode) {
+  exitCode = -1;
+#ifdef _WIN32
+  std::wstring wideFile = wideFromUtf8(file);
+  std::wstring wideArgs = wideFromUtf8(args);
+
+  // CreateProcessW 不会在 PATH 中查找程序名，需要先解析成完整路径。
+  if (wideFile.find(L'\\') == std::wstring::npos && wideFile.find(L'/') == std::wstring::npos) {
+    wchar_t resolved[MAX_PATH * 2] = {0};
+    DWORD length = SearchPathW(nullptr, wideFile.c_str(), L".exe", MAX_PATH * 2, resolved, nullptr);
+    if (length > 0 && length < MAX_PATH * 2) wideFile = resolved;
+  }
+
+  // 提权运行无法继承管道，只等待退出码。
+  if (elevate) {
+    SHELLEXECUTEINFOW info{};
+    info.cbSize = sizeof info;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+    info.lpVerb = L"runas";
+    info.lpFile = wideFile.c_str();
+    info.lpParameters = wideArgs.c_str();
+    info.nShow = SW_HIDE;
+    if (!ShellExecuteExW(&info)) {
+      exitCode = GetLastError() == ERROR_CANCELLED ? -3 : -2;
+      return "";
+    }
+    if (info.hProcess) {
+      WaitForSingleObject(info.hProcess, 120000);
+      DWORD code = 0;
+      if (GetExitCodeProcess(info.hProcess, &code)) exitCode = static_cast<int>(code);
+      CloseHandle(info.hProcess);
+    }
+    return "";
+  }
+
+  SECURITY_ATTRIBUTES attrs{};
+  attrs.nLength = sizeof attrs;
+  attrs.bInheritHandle = TRUE;
+
+  HANDLE readPipe = nullptr;
+  HANDLE writePipe = nullptr;
+  if (!CreatePipe(&readPipe, &writePipe, &attrs, 0)) return "";
+  SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
+
+  STARTUPINFOW startup{};
+  startup.cb = sizeof startup;
+  startup.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+  startup.wShowWindow = SW_HIDE;
+  startup.hStdOutput = writePipe;
+  startup.hStdError = writePipe;
+
+  PROCESS_INFORMATION process{};
+  std::wstring commandLine = L"\"" + wideFile + L"\" " + wideArgs;
+  std::vector<wchar_t> commandBuffer(commandLine.begin(), commandLine.end());
+  commandBuffer.push_back(L'\0');
+
+  BOOL started = CreateProcessW(nullptr, commandBuffer.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
+                                nullptr, &startup, &process);
+  CloseHandle(writePipe);
+  if (!started) {
+    CloseHandle(readPipe);
+    exitCode = -1;
+    return "";
+  }
+
+  std::string output;
+  char buffer[1024];
+  DWORD read = 0;
+  while (output.size() < 65536 && ReadFile(readPipe, buffer, sizeof buffer, &read, nullptr) && read > 0) {
+    output.append(buffer, read);
+  }
+  CloseHandle(readPipe);
+
+  WaitForSingleObject(process.hProcess, 30000);
+  DWORD code = 0;
+  if (GetExitCodeProcess(process.hProcess, &code)) exitCode = static_cast<int>(code);
+  CloseHandle(process.hThread);
+  CloseHandle(process.hProcess);
+  return output;
+#else
+  if (elevate) return "";
+  std::string command = file + " " + args + " 2>&1";
+  FILE* pipe = popen(command.c_str(), "r");
+  if (!pipe) {
+    exitCode = -2;
+    return "";
+  }
+  std::string output;
+  char buffer[512];
+  while (fgets(buffer, sizeof buffer, pipe)) output += buffer;
+  int status = pclose(pipe);
+  exitCode = status;
+  return output;
 #endif
 }
 

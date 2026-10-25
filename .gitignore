@@ -1,7 +1,12 @@
 *.o
 *.d
 *.obj
+*.res
 filedrop
 filedrop.exe
+dns_test
+dns_test.exe
+http_test
+http_test.exe
 filedrop-data/
 test-data*/

@@ -53,6 +53,28 @@
       </div>
 
       <div id="networkHint" class="hint">正在获取网络信息…</div>
+      <div class="qr-panel">
+        <div id="qrImage" class="qr-image"></div>
+        <div class="qr-side">
+          <div class="qr-title">用手机扫码直接打开</div>
+          <div class="muted">扫码会打开 IP 地址，不依赖 DNS，也不用在手机上输入网址。</div>
+          <select id="qrTarget" class="qr-select" aria-label="选择二维码地址"></select>
+        </div>
+      </div>
+      <button id="troubleshootToggle" class="ghost small" style="margin-top:10px" hidden>打不开？查看排查步骤</button>
+      <div id="troubleshootPanel" class="hint" hidden>
+        <div><strong>1. 设备打不开客户端页面</strong></div>
+        <div>· 先用「可用地址」中的 IP 地址测试，排除域名解析问题。</div>
+        <div>· 确认客户端与服务端在同一个 Wi-Fi / 局域网，且服务端没有连接 VPN。</div>
+        <div>· Windows 防火墙需放行 TCP 和 UDP 端口，控制台会自动尝试添加规则；若 UAC 被拒绝，请以管理员运行一次本程序。</div>
+        <div><strong>2. 想用 <span class="domain-name">filedrop.ng</span> 访问</strong></div>
+        <div>· 把客户端的 DNS 手动设置为服务端 IP(Android/iOS 在 WLAN 设置里改静态 DNS)。</div>
+        <div>· 或修改客户端 hosts，加入启动时控制台显示的那一行记录。</div>
+        <div>· 手机不能改 hosts，只能用改 DNS 或直接访问 IP 的方式。</div>
+        <div><strong>3. 域名打不开</strong></div>
+        <div>· 域名需要设备把 DNS 指向服务端，或在局域网 DHCP 里下发；否则会提示「找不到服务器」。</div>
+        <div>· 请在地址栏输入完整地址：http://<span class="domain-name">filedrop.ng</span>/(若被改成 https:// 请改回 http://)。</div>
+      </div>
     </section>
 
     <section class="card">
@@ -88,6 +110,18 @@
 
     <section class="card wide">
       <div class="card-head">
+        <h2>诊断日志</h2>
+        <div class="tools">
+          <span class="muted">记录每次 DNS 查询与网页访问的来源 IP</span>
+          <button id="refreshLog" class="ghost small">刷新</button>
+        </div>
+      </div>
+      <pre id="logView" class="log-view">点击「刷新」查看最近 200 行日志。若客户端访问时这里没有任何记录，说明请求没有到达本机(网络/防火墙/AP 隔离问题)。</pre>
+      <div class="muted" style="margin-top:8px">日志文件：<span id="logPath" class="mono"></span></div>
+    </section>
+
+    <section class="card wide">
+      <div class="card-head">
         <h2>传输记录</h2>
         <div class="tools">
           <span class="muted" id="historyHint"></span>
@@ -118,6 +152,7 @@
   </div>
 
   <div id="toasts" class="toasts"></div>
+  <script src="/qr.js"></script>
   <script src="/admin.js"></script>
 </body>
 </html>
