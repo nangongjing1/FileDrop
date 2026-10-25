@@ -30,6 +30,7 @@ struct DeviceInfo {
   std::string id;
   std::string key;
   std::string name;
+  std::string clientName;
   std::string ip;
   std::string platform;
   bool online = false;
@@ -40,6 +41,10 @@ struct DeviceInfo {
 
 class DeviceRegistry {
  public:
+  // 读取数据目录中的 config.ini，恢复设备的重命名记录。
+  void loadNames(const std::string& configPath);
+  bool refreshNames();
+
   bool verifyKey(const std::string& id, const std::string& key);
   void attach(const std::string& id, const std::string& name, const std::string& ip,
               const std::string& platform, std::shared_ptr<SseSink> sink);
@@ -56,7 +61,16 @@ class DeviceRegistry {
   void broadcastAdmins(const std::string& event, const std::string& data);
 
  private:
+  void parseNamesLocked(const std::string& content);
+  void applySavedNamesLocked();
+  bool reloadNamesIfChangedLocked();
+  // 把当前重命名记录写回 config.ini；调用方需持有 mutex_。
+  bool saveNamesLocked();
+
   std::mutex mutex_;
   std::map<std::string, DeviceInfo> devices_;
+  std::map<std::string, std::string> savedNames_;
+  std::string configPath_;
+  std::string configRaw_;
   std::vector<std::shared_ptr<SseSink>> admins_;
 };

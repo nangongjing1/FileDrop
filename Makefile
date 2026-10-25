@@ -32,11 +32,12 @@ ifeq ($(MSVC),1)
   RES      := src/filedrop.res
   RC       := rc
   CXX      := cl
-  CXXFLAGS := /nologo /std:c++17 /EHsc /MT /Os /W3 /utf-8 /D_WIN32_WINNT=0x0601 /D_CRT_SECURE_NO_WARNINGS
+  CXXFLAGS := /nologo /std:c++17 /EHsc /MT /Os /W3 /utf-8 /D_WIN32_WINNT=0x0601 /D_CRT_SECURE_NO_WARNINGS /Gy /Gw
+  LDFLAGS  := /OPT:REF /OPT:ICF /INCREMENTAL:NO
   LDLIBS   := ws2_32.lib iphlpapi.lib shell32.lib ole32.lib oleaut32.lib
   COMPILE   = $(CXX) $(CXXFLAGS) /c $< /Fo:$@
   COMPILE_RES = $(RC) /nologo /fo $(RES) $<
-  LINK      = $(CXX) $(CXXFLAGS) /Fe:$@ $(OBJ) $(RES) $(LDLIBS)
+  LINK      = $(CXX) $(CXXFLAGS) /Fe:$@ $(OBJ) $(RES) /link $(LDFLAGS) $(LDLIBS)
 else ifeq ($(OS),Windows_NT)
   EXE      := filedrop.exe
   OBJ      := $(SRC:.cpp=.o)
@@ -45,11 +46,12 @@ else ifeq ($(OS),Windows_NT)
   RC       ?= windres
   CXX      ?= g++
   CXXFLAGS ?= -std=c++17 -Os -Wall -Wextra
-  CXXFLAGS += -D_WIN32_WINNT=0x0601 -pthread -MMD -MP
-  LDLIBS   := -static -static-libgcc -static-libstdc++ -lws2_32 -liphlpapi -lshell32 -lole32 -loleaut32
+  CXXFLAGS += -D_WIN32_WINNT=0x0601 -pthread -MMD -MP -ffunction-sections -fdata-sections
+  LDFLAGS  := -static -static-libgcc -static-libstdc++ -Wl,--gc-sections -s
+  LDLIBS   := -lws2_32 -liphlpapi -lshell32 -lole32 -loleaut32
   COMPILE   = $(CXX) $(CXXFLAGS) -c $< -o $@
   COMPILE_RES = $(RC) -O coff -o $@ $<
-  LINK      = $(CXX) $(CXXFLAGS) -o $@ $(OBJ) $(RES) $(LDLIBS)
+  LINK      = $(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $(OBJ) $(RES) $(LDLIBS)
 else
   EXE      := filedrop
   OBJ      := $(SRC:.cpp=.o)
@@ -57,13 +59,55 @@ else
   RES      :=
   CXX      ?= g++
   CXXFLAGS ?= -std=c++17 -Os -Wall -Wextra
-  CXXFLAGS += -pthread -MMD -MP
+  CXXFLAGS += -pthread -MMD -MP -ffunction-sections -fdata-sections
+  ifeq ($(shell uname -s),Darwin)
+    LDFLAGS  := -Wl,-dead_strip -s
+  else
+    LDFLAGS  := -Wl,--gc-sections -s
+  endif
   LDLIBS   := -pthread
   COMPILE   = $(CXX) $(CXXFLAGS) -c $< -o $@
-  LINK      = $(CXX) $(CXXFLAGS) -o $@ $(OBJ) $(LDLIBS)
+  LINK      = $(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $(OBJ) $(LDLIBS)
 endif
 
 PYTHON ?= python
+
+ifneq (,$(findstring sh,$(notdir $(SHELL))))
+  POSIX_SHELL := 1
+endif
+
+ifeq ($(V),1)
+  Q    :=
+  STEP  =
+else
+  Q    := @
+  ifeq ($(POSIX_SHELL),1)
+    STEP = @echo "  $(1)"
+  else
+    STEP = @echo   $(1)
+  endif
+endif
+
+ifeq ($(POSIX_SHELL),1)
+  NOW_SEC = date +%s
+else
+  NOW_SEC = powershell -NoProfile -Command "[int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+endif
+
+BUILD_START := $(shell $(NOW_SEC))
+
+ifeq ($(POSIX_SHELL),1)
+  REPORT = now=$$(date +%s); \
+    size=$$(wc -c < '$(EXE)' | awk '{ print $$1 }'); \
+    secs=$$((now - $(BUILD_START))); \
+    printf '\n  Build succeeded\n'; \
+    printf '  Artifact   %s\n' '$(EXE)'; \
+    printf '  Location   %s\n' '$(abspath $(EXE))'; \
+    awk -v b="$$size" 'BEGIN { if (b >= 1048576) printf "  Size       %.2f MB (%d bytes)\n", b / 1048576, b; else printf "  Size       %.1f KB (%d bytes)\n", b / 1024, b }'; \
+    if [ "$$secs" -lt 1 ]; then printf '  Elapsed    <1 s\n'; else printf '  Elapsed    %s s\n' "$$secs"; fi
+else
+  REPORT = powershell -NoProfile -Command "$$f = Get-Item -LiteralPath '$(abspath $(EXE))'; $$s = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) - $(BUILD_START); if ($$f.Length -ge 1MB) { $$size = '{0:N2} MB' -f ($$f.Length / 1MB) } else { $$size = '{0:N1} KB' -f ($$f.Length / 1KB) }; Write-Host ''; Write-Host '  Build succeeded'; Write-Host ('  Artifact   ' + $$f.Name); Write-Host ('  Location   ' + $$f.FullName); Write-Host ('  Size       ' + $$size + ' (' + $$f.Length + ' bytes)'); if ($$s -lt 1) { Write-Host '  Elapsed    <1 s' } else { Write-Host ('  Elapsed    ' + $$s + ' s') }"
+endif
 
 ifeq ($(OS),Windows_NT)
   TEST_EXE := dns_test.exe
@@ -88,25 +132,33 @@ endif
 all: $(EXE)
 
 $(EXE): $(OBJ) $(RES)
-	$(LINK)
+	$(call STEP,LD   $@)
+	$(Q)$(LINK)
+	@$(REPORT)
 
 src/%.o: src/%.cpp
-	$(COMPILE)
+	$(call STEP,CXX  $<)
+	$(Q)$(COMPILE)
 
 src/%.obj: src/%.cpp
-	$(COMPILE)
+	$(call STEP,CXX  $<)
+	$(Q)$(COMPILE)
 
 src/gen_web_assets.cpp:
-	$(PYTHON) tools/embed_web.py web src/gen_web_assets.cpp
+	$(call STEP,WEB  $@)
+	$(Q)$(PYTHON) tools/embed_web.py web src/gen_web_assets.cpp
 
 src/filedrop.ico:
-	$(PYTHON) tools/make_icon.py web/favicon.svg src/filedrop.ico
+	$(call STEP,ICON $@)
+	$(Q)$(PYTHON) tools/make_icon.py web/favicon.svg src/filedrop.ico
 
 src/filedrop.res: src/filedrop.rc src/filedrop.ico
-	$(COMPILE_RES)
+	$(call STEP,RC   $<)
+	$(Q)$(COMPILE_RES)
 
 assets:
-	$(PYTHON) tools/embed_web.py web src/gen_web_assets.cpp
+	$(call STEP,WEB  src/gen_web_assets.cpp)
+	$(Q)$(PYTHON) tools/embed_web.py web src/gen_web_assets.cpp
 ifeq ($(OS),Windows_NT)
 	-@cmd /c "del /Q /F src\gen_web_assets.o src\gen_web_assets.obj 2>NUL"
 else
@@ -114,7 +166,8 @@ else
 endif
 
 icon:
-	$(PYTHON) tools/make_icon.py web/favicon.svg src/filedrop.ico
+	$(call STEP,ICON src/filedrop.ico)
+	$(Q)$(PYTHON) tools/make_icon.py web/favicon.svg src/filedrop.ico
 ifeq ($(OS),Windows_NT)
 	-@cmd /c "del /Q /F src\filedrop.res 2>NUL"
 else
@@ -122,10 +175,11 @@ else
 endif
 
 run: $(EXE)
+	$(call STEP,RUN  $(EXE))
 ifeq ($(OS),Windows_NT)
-	cmd /c $(EXE)
+	$(Q)cmd /c $(EXE)
 else
-	./$(EXE)
+	$(Q)./$(EXE)
 endif
 
 clean:
@@ -140,19 +194,25 @@ test: test-dns test-http
 
 test-dns:
 ifeq ($(MSVC),1)
-	$(CXX) /nologo /std:c++17 /EHsc /Os $(MSVC_TEST_FLAGS) /Isrc /Fe:$(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp
+	$(call STEP,CXX  tools/dns_test.cpp)
+	$(Q)$(CXX) /nologo /std:c++17 /EHsc /Os $(MSVC_TEST_FLAGS) /Isrc /Fe:$(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp
 else
-	$(CXX) -std=c++17 -Os -Isrc $(TEST_STATIC) -o $(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp $(TEST_LIBS)
+	$(call STEP,CXX  tools/dns_test.cpp)
+	$(Q)$(CXX) -std=c++17 -Os -Isrc $(TEST_STATIC) -o $(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp $(TEST_LIBS)
 endif
-	$(RUN_TEST)
+	$(call STEP,RUN  $(TEST_EXE))
+	$(Q)$(RUN_TEST)
 
 test-http:
 ifeq ($(MSVC),1)
-	$(CXX) /nologo /std:c++17 /EHsc /Os $(MSVC_TEST_FLAGS) /Isrc /D_WIN32_WINNT=0x0601 /Fe:$(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp ws2_32.lib iphlpapi.lib shell32.lib
+	$(call STEP,CXX  tools/http_test.cpp)
+	$(Q)$(CXX) /nologo /std:c++17 /EHsc /Os $(MSVC_TEST_FLAGS) /Isrc /D_WIN32_WINNT=0x0601 /Fe:$(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp ws2_32.lib iphlpapi.lib shell32.lib
 else
-	$(CXX) -std=c++17 -Os -Isrc -D_WIN32_WINNT=0x0601 -pthread $(TEST_STATIC) -o $(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp $(TEST_LIBS)
+	$(call STEP,CXX  tools/http_test.cpp)
+	$(Q)$(CXX) -std=c++17 -Os -Isrc -D_WIN32_WINNT=0x0601 -pthread $(TEST_STATIC) -o $(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp $(TEST_LIBS)
 endif
-	$(RUN_HTTP_TEST)
+	$(call STEP,RUN  $(HTTP_TEST_EXE))
+	$(Q)$(RUN_HTTP_TEST)
 
 help:
 	@echo "make          构建 $(EXE)"
@@ -162,5 +222,6 @@ help:
 	@echo "make test     运行 DNS / HTTP 协议单元测试"
 	@echo "make run      构建并运行"
 	@echo "make clean    删除构建产物"
+	@echo "make V=1      显示完整构建日志"
 
 -include $(DEPS)

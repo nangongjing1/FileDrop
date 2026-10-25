@@ -139,6 +139,7 @@ App::App(AppOptions options) : options_(std::move(options)) {}
 
 bool App::init(std::string& err) {
   if (!store_.init(options_.dataDir, options_.keepData, err)) return false;
+  devices_.loadNames(options_.dataDir + "/config.ini");
   adminToken_ = util::randomHex(16);
   return true;
 }
@@ -478,6 +479,7 @@ void App::handleAdminEvents(HttpRequest& req, HttpResponse& res) {
   int ticks = 0;
   while (!stopping_ && !sink->closed()) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
+    if (devices_.refreshNames()) notifyAdmin(true);
     if (++ticks % 15 == 0) {
       if (!sink->sendComment("ping")) break;
     }

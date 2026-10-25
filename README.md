@@ -43,6 +43,8 @@ tools/http_test.cpp     HTTP 解析与工具函数单元测试
 make            # 生成 filedrop.exe
 ```
 
+构建日志默认静默：只显示每一步的名称（`CXX` / `RC` / `LD` 等），链接结束后输出构建产物路径、大小和本次编译耗时。需要查看完整命令行时执行 `make V=1`。
+
 也可以直接运行 `build.cmd`，它会自动在常见位置查找 w64devkit 再调用 `make`。
 
 修改了 `web/` 下的页面后需要重新嵌入资源(需要 Python 3)：
@@ -195,6 +197,7 @@ Windows hosts：`C:\Windows\System32\drivers\etc\hosts`；macOS/Linux：`/etc/ho
 - 下发给设备的下载链接为随机令牌，10 分钟内有效且绑定目标设备。
 - 客户端页面没有跨设备列表，也不能控制服务端。
 - 文件保存在服务端 `filedrop-data/files/`(启动默认清空，`--keep` 保留)，不经过互联网。
+- 设备重命名记录保存在数据目录的 `config.ini`(`[devices]` 段，`设备ID=名称`)，重启后仍然生效；运行中直接编辑该文件也会立即生效(删除某行即恢复客户端自己的名称)。该文件不会被启动时的清理删除。
 - 明文 HTTP，仅建议在可信局域网内使用。
 
 ## 常见问题

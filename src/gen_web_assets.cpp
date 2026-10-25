@@ -15,7 +15,7 @@ const char kAsset0[] = R"FDWEB(<!doctype html>
 <body>
   <header class="topbar">
     <div class="brand">
-      <div class="logo">⇄</div>
+      <div class="logo"><img src="/favicon.svg" alt=""></div>
       <div>
         <h1>Filedrop <span class="muted" style="font-weight:400">服务端控制台</span></h1>
         <p>局域网文件传输 · <span id="serverIp">正在获取地址…</span></p>
@@ -1148,14 +1148,16 @@ body {
 .logo {
   width: 44px;
   height: 44px;
-  display: grid;
-  place-items: center;
+  flex: 0 0 auto;
   border-radius: 13px;
-  font-size: 22px;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #4f8cff, #22d3a6);
+  overflow: hidden;
   box-shadow: 0 10px 24px rgba(79, 140, 255, 0.35);
+}
+
+.logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .brand h1 {
@@ -1863,20 +1865,46 @@ tr:last-child td {
 }
 
 .qr-select {
-  margin-top: 12px;
+  margin-top: 8px;
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 10px;
+  padding: 11px 34px 11px 13px;
+  border-radius: 12px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.05);
+  background-color: var(--panel);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%2393a5c4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0));
+  background-repeat: no-repeat, no-repeat;
+  background-position: right 12px center, 0 0;
+  background-size: 12px 12px, 100% 100%;
   color: var(--text);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
+  appearance: none;
+  color-scheme: dark;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.qr-select:hover {
+  border-color: rgba(79, 140, 255, 0.45);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.32);
+}
+
+.qr-select:focus-visible {
+  outline: none;
+  border-color: rgba(79, 140, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.18), 0 12px 26px rgba(0, 0, 0, 0.32);
 }
 
 .qr-select option {
-  color: #000;
-  background: #fff;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--panel-2);
 }
 
 .log-view {
@@ -2650,7 +2678,7 @@ const char kAsset5[] = R"FDWEB(<!doctype html>
 <body>
   <header class="topbar">
     <div class="brand">
-      <div class="logo">⇄</div>
+      <div class="logo"><img src="/favicon.svg" alt=""></div>
       <div>
         <h1>Filedrop</h1>
         <p>与服务器互传文件 · <span id="serverLabel">连接中…</span></p>

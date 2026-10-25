@@ -2,11 +2,9 @@
 *.d
 *.obj
 *.res
+*.exe
 filedrop
-filedrop.exe
 dns_test
-dns_test.exe
 http_test
-http_test.exe
 filedrop-data/
 test-data*/
