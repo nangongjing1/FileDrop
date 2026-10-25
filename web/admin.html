@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Filedrop · 服务端控制台</title>
+  <link rel="icon" href="/favicon.svg">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">⇄</div>
+      <div>
+        <h1>Filedrop <span class="muted" style="font-weight:400">服务端控制台</span></h1>
+        <p>局域网文件传输 · <span id="serverIp">正在获取地址…</span></p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="addr-box">
+        <span class="muted">客户端地址</span>
+        <code id="clientUrl">…</code>
+        <button id="copyUrl" class="ghost small">复制</button>
+      </div>
+      <div class="device-chip">
+        <span id="adminDot" class="dot warn" title="实时连接状态"></span>
+        <span id="adminState" class="muted">连接中…</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="connBanner" class="conn-banner">与服务端的实时连接已断开，正在自动重连…</div>
+
+  <main class="layout">
+    <section class="card wide">
+      <div class="card-head">
+        <h2>已连接设备 <span id="onlineCount" class="badge">0</span></h2>
+        <div class="tools">
+          <button id="selectAll" class="ghost small">全选</button>
+          <button id="sendSelected" class="primary small" disabled>发送到已选设备</button>
+        </div>
+      </div>
+      <div id="devices" class="devices">
+        <div class="empty" style="grid-column:1/-1">暂无设备，等待局域网设备访问客户端页面…</div>
+      </div>
+
+      <div class="card-head" style="margin:20px 0 12px">
+        <h2>文件请求 <span id="requestCount" class="badge">0</span></h2>
+        <span class="muted">请求会实时推送到客户端</span>
+      </div>
+      <div id="requests" class="stack">
+        <div class="empty">暂无请求</div>
+      </div>
+
+      <div id="networkHint" class="hint">正在获取网络信息…</div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>待发送文件 <span id="stagingCount" class="badge">0</span></h2>
+        <button id="clearStaging" class="ghost small">清空</button>
+      </div>
+      <div id="dropZone" class="dropzone compact">
+        <div class="dz-icon">⬆</div>
+        <p>拖拽文件或文件夹到这里</p>
+        <div class="row" style="justify-content:center">
+          <button id="pickFiles" class="primary small">选择文件</button>
+          <button id="pickDir" class="ghost small">选择文件夹</button>
+        </div>
+        <input id="fileInput" type="file" multiple hidden>
+        <input id="dirInput" type="file" webkitdirectory multiple hidden>
+      </div>
+      <ul id="uploadQueue" class="list" style="margin-top:12px"></ul>
+      <ul id="staging" class="list" style="margin-top:12px">
+        <li class="empty" style="border:none">暂无待发送文件</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>已接收文件 <span id="receivedCount" class="badge">0</span></h2>
+        <span class="muted">可下载或转发</span>
+      </div>
+      <ul id="received" class="list">
+        <li class="empty" style="border:none">尚未收到文件</li>
+      </ul>
+    </section>
+
+    <section class="card wide">
+      <div class="card-head">
+        <h2>传输记录</h2>
+        <div class="tools">
+          <span class="muted" id="historyHint"></span>
+          <button id="clearHistory" class="ghost small">清空记录</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:80px">时间</th>
+              <th style="width:90px">方向</th>
+              <th style="width:150px">设备</th>
+              <th>文件</th>
+              <th style="width:90px">大小</th>
+              <th style="width:200px">状态</th>
+              <th style="width:160px">SHA-256</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="footer-note">
+    服务端只能与客户端互传文件。数据目录：<span id="dataDir" class="mono"></span>
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+  <script src="/admin.js"></script>
+</body>
+</html>

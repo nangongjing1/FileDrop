@@ -1,0 +1,7 @@
+*.o
+*.d
+*.obj
+filedrop
+filedrop.exe
+filedrop-data/
+test-data*/

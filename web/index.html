@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Filedrop · 与服务器互传文件</title>
+  <link rel="icon" href="/favicon.svg">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">⇄</div>
+      <div>
+        <h1>Filedrop</h1>
+        <p>与服务器互传文件 · <span id="serverLabel">连接中…</span></p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="device-chip">
+        <span id="onlineDot" class="dot warn" title="连接状态"></span>
+        <input id="deviceName" maxlength="24" aria-label="设备名称" autocomplete="off">
+        <button id="saveName" class="ghost small">保存名称</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="connBanner" class="conn-banner">与服务器的连接已断开，正在自动重连…</div>
+
+  <main class="layout">
+    <section class="card">
+      <div class="card-head">
+        <h2>发送文件给服务器</h2>
+        <span id="uploadSummary" class="muted">支持多文件与文件夹</span>
+      </div>
+      <div id="dropZone" class="dropzone">
+        <div class="dz-icon">⬆</div>
+        <p>拖拽文件或文件夹到这里，或点击下方按钮</p>
+        <div class="row" style="justify-content:center">
+          <button id="pickFiles" class="primary">选择文件</button>
+          <button id="pickDir" class="ghost">选择文件夹</button>
+        </div>
+        <input id="fileInput" type="file" multiple hidden>
+        <input id="dirInput" type="file" webkitdirectory multiple hidden>
+      </div>
+      <ul id="uploadList" class="list" style="margin-top:12px"></ul>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>来自服务器的文件 <span id="offerCount" class="badge">0</span></h2>
+      </div>
+      <div id="offers" class="stack">
+        <div class="empty">暂无待接收文件</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>服务器请求 <span id="requestCount" class="badge">0</span></h2>
+      </div>
+      <div id="requests" class="stack">
+        <div class="empty">暂无请求</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>本次记录</h2>
+        <span id="historyHint" class="muted"></span>
+      </div>
+      <ul id="history" class="list"></ul>
+    </section>
+  </main>
+
+  <div class="footer-note">
+    客户端只能与服务器互传文件，看不到局域网中的其它设备。所有文件仅在局域网内直接传输。
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+  <input id="requestInput" type="file" multiple hidden>
+  <script src="/client.js"></script>
+</body>
+</html>
