@@ -49,7 +49,7 @@ const char kAsset0[] = R"FDWEB(<!doctype html>
           <button id="pickFiles" class="primary small">选择文件</button>
           <button id="pickDir" class="ghost small">选择文件夹</button>
         </div>
-        <input id="fileInput" type="file" multiple hidden>
+        <input id="fileInput" type="file" accept="*/*" multiple hidden>
         <input id="dirInput" type="file" webkitdirectory multiple hidden>
       </div>
       <ul id="uploadQueue" class="list" style="margin-top:12px"></ul>
@@ -2708,7 +2708,7 @@ const char kAsset5[] = R"FDWEB(<!doctype html>
           <button id="pickFiles" class="primary">选择文件</button>
           <button id="pickDir" class="ghost">选择文件夹</button>
         </div>
-        <input id="fileInput" type="file" multiple hidden>
+        <input id="fileInput" type="file" accept="*/*" multiple hidden>
         <input id="dirInput" type="file" webkitdirectory multiple hidden>
       </div>
       <ul id="uploadList" class="list" style="margin-top:12px"></ul>
@@ -2746,7 +2746,7 @@ const char kAsset5[] = R"FDWEB(<!doctype html>
   </div>
 
   <div id="toasts" class="toasts"></div>
-  <input id="requestInput" type="file" multiple hidden>
+  <input id="requestInput" type="file" accept="*/*" multiple hidden>
   <script src="/client.js"></script>
 </body>
 </html>
