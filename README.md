@@ -22,8 +22,8 @@
 
 ```
 Makefile                构建脚本(Windows / Linux / macOS)
-build.cmd               Windows 快捷构建(自动查找 w64devkit)
-src/                    服务端源码(HTTP、SSE、DNS、存储、设备、SHA-256、防火墙)
+src/                    服务端实现(HTTP、SSE、DNS、存储、设备、SHA-256、防火墙)
+include/                服务端头文件
 src/filedrop.rc         Windows 资源脚本(应用图标)
 src/filedrop.ico        由 web/favicon.svg 生成的多尺寸图标
 web/                    管理端与客户端页面(构建时嵌入可执行文件)

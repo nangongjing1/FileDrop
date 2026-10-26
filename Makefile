@@ -12,6 +12,8 @@
 # 修改 web/favicon.svg(应用图标)后：
 #   make icon && make
 
+INCLUDE  := include
+
 SRC := src/main.cpp \
        src/app.cpp \
        src/http_server.cpp \
@@ -32,7 +34,7 @@ ifeq ($(MSVC),1)
   RES      := src/filedrop.res
   RC       := rc
   CXX      := cl
-  CXXFLAGS := /nologo /std:c++17 /EHsc /MT /Os /W3 /utf-8 /D_WIN32_WINNT=0x0601 /D_CRT_SECURE_NO_WARNINGS /Gy /Gw
+  CXXFLAGS := /nologo /std:c++17 /EHsc /MT /Os /W3 /utf-8 /I$(INCLUDE) /D_WIN32_WINNT=0x0601 /D_CRT_SECURE_NO_WARNINGS /Gy /Gw
   LDFLAGS  := /OPT:REF /OPT:ICF /INCREMENTAL:NO
   LDLIBS   := ws2_32.lib iphlpapi.lib shell32.lib ole32.lib oleaut32.lib
   COMPILE   = $(CXX) $(CXXFLAGS) /c $< /Fo:$@
@@ -46,7 +48,7 @@ else ifeq ($(OS),Windows_NT)
   RC       ?= windres
   CXX      ?= g++
   CXXFLAGS ?= -std=c++17 -Os -Wall -Wextra
-  CXXFLAGS += -D_WIN32_WINNT=0x0601 -pthread -MMD -MP -ffunction-sections -fdata-sections
+  CXXFLAGS += -I$(INCLUDE) -D_WIN32_WINNT=0x0601 -pthread -MMD -MP -ffunction-sections -fdata-sections
   LDFLAGS  := -static -static-libgcc -static-libstdc++ -Wl,--gc-sections -s
   LDLIBS   := -lws2_32 -liphlpapi -lshell32 -lole32 -loleaut32
   COMPILE   = $(CXX) $(CXXFLAGS) -c $< -o $@
@@ -59,7 +61,7 @@ else
   RES      :=
   CXX      ?= g++
   CXXFLAGS ?= -std=c++17 -Os -Wall -Wextra
-  CXXFLAGS += -pthread -MMD -MP -ffunction-sections -fdata-sections
+  CXXFLAGS += -I$(INCLUDE) -pthread -MMD -MP -ffunction-sections -fdata-sections
   ifeq ($(shell uname -s),Darwin)
     LDFLAGS  := -Wl,-dead_strip -s
   else
@@ -195,10 +197,10 @@ test: test-dns test-http
 test-dns:
 ifeq ($(MSVC),1)
 	$(call STEP,CXX  tools/dns_test.cpp)
-	$(Q)$(CXX) /nologo /std:c++17 /EHsc /Os $(MSVC_TEST_FLAGS) /Isrc /Fe:$(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp
+	$(Q)$(CXX) /nologo /std:c++17 /EHsc /Os $(MSVC_TEST_FLAGS) /I$(INCLUDE) /Fe:$(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp
 else
 	$(call STEP,CXX  tools/dns_test.cpp)
-	$(Q)$(CXX) -std=c++17 -Os -Isrc $(TEST_STATIC) -o $(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp $(TEST_LIBS)
+	$(Q)$(CXX) -std=c++17 -Os -I$(INCLUDE) $(TEST_STATIC) -o $(TEST_EXE) tools/dns_test.cpp src/dns_protocol.cpp $(TEST_LIBS)
 endif
 	$(call STEP,RUN  $(TEST_EXE))
 	$(Q)$(RUN_TEST)
@@ -206,10 +208,10 @@ endif
 test-http:
 ifeq ($(MSVC),1)
 	$(call STEP,CXX  tools/http_test.cpp)
-	$(Q)$(CXX) /nologo /std:c++17 /EHsc /Os $(MSVC_TEST_FLAGS) /Isrc /D_WIN32_WINNT=0x0601 /Fe:$(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp ws2_32.lib iphlpapi.lib shell32.lib
+	$(Q)$(CXX) /nologo /std:c++17 /EHsc /Os $(MSVC_TEST_FLAGS) /I$(INCLUDE) /D_WIN32_WINNT=0x0601 /Fe:$(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp ws2_32.lib iphlpapi.lib shell32.lib
 else
 	$(call STEP,CXX  tools/http_test.cpp)
-	$(Q)$(CXX) -std=c++17 -Os -Isrc -D_WIN32_WINNT=0x0601 -pthread $(TEST_STATIC) -o $(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp $(TEST_LIBS)
+	$(Q)$(CXX) -std=c++17 -Os -I$(INCLUDE) -D_WIN32_WINNT=0x0601 -pthread $(TEST_STATIC) -o $(HTTP_TEST_EXE) tools/http_test.cpp src/http_server.cpp src/util.cpp src/applog.cpp $(TEST_LIBS)
 endif
 	$(call STEP,RUN  $(HTTP_TEST_EXE))
 	$(Q)$(RUN_HTTP_TEST)
