@@ -15,6 +15,10 @@ namespace {
 
 constexpr const char* kDevicesSection = "[devices]";
 
+std::string defaultDeviceName(const std::string& id) {
+  return "设备-" + id.substr(0, std::min<size_t>(4, id.size()));
+}
+
 std::string readConfigFile(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
   if (!in) return "";
@@ -103,15 +107,8 @@ bool DeviceRegistry::reloadNamesIfChangedLocked() {
 
 void DeviceRegistry::applySavedNamesLocked() {
   for (auto& kv : devices_) {
-    DeviceInfo& device = kv.second;
     auto saved = savedNames_.find(kv.first);
-    if (saved != savedNames_.end()) {
-      device.name = saved->second;
-    } else if (!device.clientName.empty()) {
-      device.name = device.clientName;
-    } else {
-      device.name = "设备-" + kv.first.substr(0, std::min<size_t>(4, kv.first.size()));
-    }
+    kv.second.name = saved != savedNames_.end() ? saved->second : defaultDeviceName(kv.first);
   }
 }
 
@@ -197,7 +194,7 @@ bool DeviceRegistry::verifyKey(const std::string& id, const std::string& key) {
   return it->second.key == key;
 }
 
-void DeviceRegistry::attach(const std::string& id, const std::string& name, const std::string& ip,
+void DeviceRegistry::attach(const std::string& id, const std::string& ip,
                             const std::string& platform, std::shared_ptr<SseSink> sink) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = devices_.find(id);
@@ -211,7 +208,6 @@ void DeviceRegistry::attach(const std::string& id, const std::string& name, cons
   if (device.sink && device.sink != sink) {
     device.sink->close();
   }
-  if (!name.empty()) device.clientName = name;
   applySavedNamesLocked();
   if (!ip.empty()) device.ip = ip;
   if (!platform.empty()) device.platform = platform;
@@ -234,9 +230,21 @@ bool DeviceRegistry::rename(const std::string& id, const std::string& name) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = devices_.find(id);
   if (it == devices_.end()) return false;
-  it->second.name = name;
+
+  auto previous = savedNames_.find(id);
+  const bool hadPrevious = previous != savedNames_.end();
+  const std::string previousName = hadPrevious ? previous->second : std::string();
   savedNames_[id] = name;
-  saveNamesLocked();
+  if (!saveNamesLocked()) {
+    if (hadPrevious) {
+      savedNames_[id] = previousName;
+    } else {
+      savedNames_.erase(id);
+    }
+    applySavedNamesLocked();
+    return false;
+  }
+  applySavedNamesLocked();
   return true;
 }
 
@@ -247,7 +255,7 @@ std::string DeviceRegistry::nameOf(const std::string& id) {
   if (it != devices_.end() && !it->second.name.empty()) return it->second.name;
   auto saved = savedNames_.find(id);
   if (saved != savedNames_.end()) return saved->second;
-  return "设备-" + id.substr(0, std::min<size_t>(4, id.size()));
+  return defaultDeviceName(id);
 }
 
 bool DeviceRegistry::exists(const std::string& id) {

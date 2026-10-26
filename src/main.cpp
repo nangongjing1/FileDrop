@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -467,8 +468,10 @@ int main(int argc, char** argv) {
   }
   std::cout << std::flush;
 
+  auto startupNoticesDone = std::make_shared<std::atomic<bool>>(firewallMode != "auto");
+
   if (firewallMode == "auto") {
-    std::thread([&app, httpPort, dnsPort, dnsActive] {
+    std::thread([&app, httpPort, dnsPort, dnsActive, startupNoticesDone] {
       firewall::Status status = firewall::ensureRules(httpPort, dnsPort, dnsActive);
       app.setFirewallReport(status.detail);
       std::cout << "  [防火墙] " << status.detail << "\n";
@@ -482,6 +485,7 @@ int main(int argc, char** argv) {
         }
       }
       std::cout << std::flush;
+      startupNoticesDone->store(true);
     }).detach();
   }
 
@@ -493,8 +497,13 @@ int main(int argc, char** argv) {
 
   const int finalDnsPort = dnsPort;
   std::thread inputThread([&] {
+    while (!startupNoticesDone->load()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
     std::string line;
-    while (std::getline(std::cin, line)) {
+    while (true) {
+      std::cout << ">> " << std::flush;
+      if (!std::getline(std::cin, line)) break;
       std::string cmd = util::toLower(util::trim(line));
       if (cmd == "q" || cmd == "quit" || cmd == "exit") {
         g_stop = true;

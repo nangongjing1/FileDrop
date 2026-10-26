@@ -1423,7 +1423,9 @@ button:disabled {
 .device input[type="checkbox"] {
   width: 17px;
   height: 17px;
-  margin-top: 3px;
+  align-self: center;
+  /* 保持水平位置不变，仅垂直居中：左侧 4px、右侧 3px 沿用浏览器默认外边距 */
+  margin: 0 3px 0 4px;
   accent-color: var(--accent);
   cursor: pointer;
   flex: 0 0 auto;
@@ -1432,6 +1434,7 @@ button:disabled {
 .device-main {
   flex: 1;
   min-width: 0;
+  align-self: center;
 }
 
 .device-name {
@@ -1443,6 +1446,9 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 状态圆点的光晕绘制在盒子之外，左侧留出内边距避免被 overflow 裁切 */
+  padding-left: 6px;
+  margin-left: -6px;
 }
 
 .device-meta {
@@ -2093,9 +2099,6 @@ const char kAsset3[] = R"FDWEB((() => {
   storeSet('fd.key', deviceKey);
 
   const nameInput = $('#deviceName');
-  const initialName = params.get('name') || storeGet('fd.name') || '设备-' + deviceId.slice(0, 4);
-  storeSet('fd.name', initialName);
-  nameInput.value = initialName;
 
   if (params.has('device') || params.has('key') || params.has('name')) {
     history.replaceState(null, '', location.pathname);
@@ -2106,11 +2109,6 @@ const char kAsset3[] = R"FDWEB((() => {
   let events = null;
   let reloadTimer = null;
   let requestTarget = null;
-
-  function currentName() {
-    const value = (nameInput.value || '').trim();
-    return value || initialName;
-  }
 
   function describePlatform() {
     const ua = navigator.userAgent || '';
@@ -2185,7 +2183,6 @@ const char kAsset3[] = R"FDWEB((() => {
     const query = new URLSearchParams({
       deviceId,
       key: deviceKey,
-      name: currentName(),
       platform: describePlatform(),
     });
     events = new EventSource('/api/client/events?' + query.toString());
@@ -2219,7 +2216,6 @@ const char kAsset3[] = R"FDWEB((() => {
 
     if (document.activeElement !== nameInput && snapshot.device && snapshot.device.name) {
       nameInput.value = snapshot.device.name;
-      storeSet('fd.name', snapshot.device.name);
     }
 
     renderOffers(snapshot.offers || []);
@@ -2626,17 +2622,25 @@ const char kAsset3[] = R"FDWEB((() => {
     await uploadFiles(entries, { requestId });
   });
 
-  $('#saveName').addEventListener('click', () => {
+  $('#saveName').addEventListener('click', async () => {
     const name = (nameInput.value || '').trim().slice(0, 24);
     if (!name) {
       toast('设备名称不能为空', 'error');
       return;
     }
-    storeSet('fd.name', name);
-    nameInput.blur();
-    toast('设备名称已更新', 'ok');
-    connectEvents();
-    loadState();
+    try {
+      const data = await api('/api/client/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      nameInput.value = data.name || name;
+      nameInput.blur();
+      toast('设备名称已保存到配置', 'ok');
+      loadState();
+    } catch (err) {
+      toast('保存失败：' + err.message, 'error');
+    }
   });
 
   nameInput.addEventListener('keydown', (event) => {
@@ -2687,8 +2691,8 @@ const char kAsset5[] = R"FDWEB(<!doctype html>
     <div class="top-actions">
       <div class="device-chip">
         <span id="onlineDot" class="dot warn" title="连接状态"></span>
-        <input id="deviceName" maxlength="24" aria-label="设备名称" autocomplete="off">
-        <button id="saveName" class="ghost small">保存名称</button>
+        <input id="deviceName" maxlength="24" aria-label="设备名称" placeholder="加载中…" title="设备名称来自服务端 config.ini，修改后点击保存会写回配置文件" autocomplete="off">
+        <button id="saveName" class="ghost small" title="写入服务端 config.ini">保存名称</button>
       </div>
     </div>
   </header>

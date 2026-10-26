@@ -58,6 +58,7 @@ class App {
   void handleClientState(HttpRequest& req, HttpResponse& res);
   void handleClientUpload(HttpRequest& req, HttpResponse& res);
   void handleClientAck(HttpRequest& req, HttpResponse& res);
+  void handleClientRename(HttpRequest& req, HttpResponse& res);
   void handleDownload(HttpRequest& req, HttpResponse& res);
   void handleAdminState(HttpRequest& req, HttpResponse& res);
   void handleAdminLog(HttpRequest& req, HttpResponse& res);

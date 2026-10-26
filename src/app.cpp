@@ -44,15 +44,15 @@ bool validDeviceId(const std::string& id) {
   return true;
 }
 
-std::string cleanDisplayName(const std::string& raw) {
+std::string cleanDisplayName(const std::string& raw, size_t maxBytes = 48) {
   std::string trimmed = util::trim(raw);
   std::string out;
   for (unsigned char c : trimmed) {
     if (c < 0x20 || c == 0x7F) continue;
     out.push_back(static_cast<char>(c));
   }
-  if (out.size() > 48) {
-    size_t cut = 48;
+  if (maxBytes > 0 && out.size() > maxBytes) {
+    size_t cut = maxBytes;
     while (cut > 0 && (static_cast<unsigned char>(out[cut]) & 0xC0) == 0x80) --cut;
     out.resize(cut);
   }
@@ -261,8 +261,6 @@ void App::handleClientEvents(HttpRequest& req, HttpResponse& res) {
   std::string deviceId;
   if (!requireDevice(req, res, deviceId)) return;
 
-  std::string name = req.param("name");
-  if (!name.empty()) name = cleanDisplayName(name);
   std::string platform = req.param("platform");
   if (platform.size() > 120) platform.resize(120);
 
@@ -270,7 +268,7 @@ void App::handleClientEvents(HttpRequest& req, HttpResponse& res) {
   if (!res.begin(200, "text/event-stream; charset=utf-8", net::kNoContentLength)) return;
 
   auto sink = std::make_shared<SseSink>(res.socket());
-  devices_.attach(deviceId, name, req.remoteIp, platform, sink);
+  devices_.attach(deviceId, req.remoteIp, platform, sink);
   sink->sendComment("connected");
   notifyAdmin(true);
 
@@ -406,6 +404,27 @@ void App::handleClientAck(HttpRequest& req, HttpResponse& res) {
   }
   notifyAdmin(true);
   sendJson(res, 200, std::string("{\"ok\":true,\"changed\":") + (changed ? "true" : "false") + "}");
+}
+
+void App::handleClientRename(HttpRequest& req, HttpResponse& res) {
+  std::string deviceId;
+  if (!requireDevice(req, res, deviceId)) return;
+
+  util::JsonValue body;
+  if (!readJsonBody(req, res, &body)) return;
+
+  std::string raw = util::trim(body.stringOr("name"));
+  if (raw.empty()) {
+    sendError(res, 400, "设备名称不能为空");
+    return;
+  }
+  if (!devices_.rename(deviceId, cleanDisplayName(raw))) {
+    sendError(res, 500, "无法写入配置文件");
+    return;
+  }
+  notifyDevice(deviceId);
+  notifyAdmin(true);
+  sendJson(res, 200, "{\"ok\":true,\"name\":" + util::jsonQuote(devices_.nameOf(deviceId)) + "}");
 }
 
 void App::handleDownload(HttpRequest& req, HttpResponse& res) {
@@ -668,7 +687,7 @@ void App::handleAdminRename(HttpRequest& req, HttpResponse& res) {
   std::string deviceId = body.stringOr("deviceId");
   std::string name = cleanDisplayName(body.stringOr("name"));
   if (deviceId.empty() || !devices_.rename(deviceId, name)) {
-    sendError(res, 404, "设备不存在");
+    sendError(res, 404, "设备不存在或配置写入失败");
     return;
   }
   notifyDevice(deviceId);
@@ -931,6 +950,8 @@ void App::registerRoutes(HttpServer& server) {
              [this](HttpRequest& req, HttpResponse& res) { handleClientUpload(req, res); });
   server.post("/api/client/ack",
               [this](HttpRequest& req, HttpResponse& res) { handleClientAck(req, res); });
+  server.post("/api/client/rename",
+              [this](HttpRequest& req, HttpResponse& res) { handleClientRename(req, res); });
   server.onPrefix("GET", "/dl/", [this](HttpRequest& req, HttpResponse& res) { handleDownload(req, res); });
 
   server.get("/api/admin/state",

@@ -30,7 +30,6 @@ struct DeviceInfo {
   std::string id;
   std::string key;
   std::string name;
-  std::string clientName;
   std::string ip;
   std::string platform;
   bool online = false;
@@ -46,8 +45,8 @@ class DeviceRegistry {
   bool refreshNames();
 
   bool verifyKey(const std::string& id, const std::string& key);
-  void attach(const std::string& id, const std::string& name, const std::string& ip,
-              const std::string& platform, std::shared_ptr<SseSink> sink);
+  void attach(const std::string& id, const std::string& ip, const std::string& platform,
+              std::shared_ptr<SseSink> sink);
   void detach(const std::string& id, const std::shared_ptr<SseSink>& sink);
   bool rename(const std::string& id, const std::string& name);
   std::string nameOf(const std::string& id);

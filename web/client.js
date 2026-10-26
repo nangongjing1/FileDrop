@@ -131,9 +131,6 @@
   storeSet('fd.key', deviceKey);
 
   const nameInput = $('#deviceName');
-  const initialName = params.get('name') || storeGet('fd.name') || '设备-' + deviceId.slice(0, 4);
-  storeSet('fd.name', initialName);
-  nameInput.value = initialName;
 
   if (params.has('device') || params.has('key') || params.has('name')) {
     history.replaceState(null, '', location.pathname);
@@ -144,11 +141,6 @@
   let events = null;
   let reloadTimer = null;
   let requestTarget = null;
-
-  function currentName() {
-    const value = (nameInput.value || '').trim();
-    return value || initialName;
-  }
 
   function describePlatform() {
     const ua = navigator.userAgent || '';
@@ -223,7 +215,6 @@
     const query = new URLSearchParams({
       deviceId,
       key: deviceKey,
-      name: currentName(),
       platform: describePlatform(),
     });
     events = new EventSource('/api/client/events?' + query.toString());
@@ -257,7 +248,6 @@
 
     if (document.activeElement !== nameInput && snapshot.device && snapshot.device.name) {
       nameInput.value = snapshot.device.name;
-      storeSet('fd.name', snapshot.device.name);
     }
 
     renderOffers(snapshot.offers || []);
@@ -664,17 +654,25 @@
     await uploadFiles(entries, { requestId });
   });
 
-  $('#saveName').addEventListener('click', () => {
+  $('#saveName').addEventListener('click', async () => {
     const name = (nameInput.value || '').trim().slice(0, 24);
     if (!name) {
       toast('设备名称不能为空', 'error');
       return;
     }
-    storeSet('fd.name', name);
-    nameInput.blur();
-    toast('设备名称已更新', 'ok');
-    connectEvents();
-    loadState();
+    try {
+      const data = await api('/api/client/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      nameInput.value = data.name || name;
+      nameInput.blur();
+      toast('设备名称已保存到配置', 'ok');
+      loadState();
+    } catch (err) {
+      toast('保存失败：' + err.message, 'error');
+    }
   });
 
   nameInput.addEventListener('keydown', (event) => {

@@ -333,7 +333,9 @@ button:disabled {
 .device input[type="checkbox"] {
   width: 17px;
   height: 17px;
-  margin-top: 3px;
+  align-self: center;
+  /* 保持水平位置不变，仅垂直居中：左侧 4px、右侧 3px 沿用浏览器默认外边距 */
+  margin: 0 3px 0 4px;
   accent-color: var(--accent);
   cursor: pointer;
   flex: 0 0 auto;
@@ -342,6 +344,7 @@ button:disabled {
 .device-main {
   flex: 1;
   min-width: 0;
+  align-self: center;
 }
 
 .device-name {
@@ -353,6 +356,9 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 状态圆点的光晕绘制在盒子之外，左侧留出内边距避免被 overflow 裁切 */
+  padding-left: 6px;
+  margin-left: -6px;
 }
 
 .device-meta {
